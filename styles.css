@@ -131,6 +131,43 @@ h2, h3 {
     margin-top: 3px;
 }
 
+/* Pinned course styles */
+.class-card.pinned {
+    background-color: #e8f5e8; /* Light green background */
+    border-color: #4caf50; /* Green border */
+    border-width: 2px;
+    box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+}
+
+/* Pin button styles */
+.pin-button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: none;
+    border: none;
+    font-size: 0.9em;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    opacity: 0.6;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+.pin-button:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.class-card.pinned .pin-button {
+    opacity: 0.8;
+}
+
+.class-card.pinned .pin-button:hover {
+    opacity: 1;
+    background-color: rgba(76, 175, 80, 0.2);
+}
+
 .tooltip {
     visibility: hidden;
     width: 200px;
