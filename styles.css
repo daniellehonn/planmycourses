@@ -1430,4 +1430,142 @@ h3 {
 .social-links a svg {
     width: 16px;
     height: 16px;
+}
+
+/* Main Settings Section */
+.main-settings-section {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.main-settings-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    align-items: start;
+}
+
+.setting-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.setting-group label {
+    font-weight: 600;
+    color: #374151;
+    font-size: 14px;
+}
+
+.setting-group select,
+.setting-group input[type="number"] {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+    transition: border-color 0.2s ease;
+}
+
+.setting-group select:focus,
+.setting-group input[type="number"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.setting-group input[type="number"]:read-only {
+    background: #f8fafc !important;
+    color: #64748b !important;
+    cursor: not-allowed;
+    border-color: #e2e8f0;
+}
+
+.setting-group select:focus,
+.setting-group input[type="number"]:focus:not(:read-only) {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.dynamic-info {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    grid-column: 1 / -1;
+}
+
+.info-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.info-item:not(:last-child) {
+    border-bottom: 1px solid #f3f4f6;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+}
+
+.info-label {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.info-value {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 14px;
+}
+
+/* Advanced Settings Modal Updates */
+.settings-description {
+    color: #6b7280;
+    font-size: 14px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.current-dynamic-values {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 20px;
+}
+
+.current-dynamic-values h5 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.dynamic-values-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.dynamic-values-grid strong {
+    color: #1f2937;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .main-settings-container {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .dynamic-info {
+        grid-column: 1;
+    }
 } 

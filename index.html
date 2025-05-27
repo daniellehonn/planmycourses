@@ -96,15 +96,66 @@
         <div class="header-section">
             <h1>Interactive Class Planner</h1>
             <div class="header-buttons">
-                <button class="settings-button" onclick="toggleSettingsModal()" title="Settings">
+                <button class="settings-button" onclick="toggleSettingsModal()" title="Advanced Settings">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
+                    Advanced
                 </button>
                 <button class="help-button" onclick="toggleSidebar()" title="Show setup instructions">
                     📋 Setup Guide
                 </button>
+            </div>
+        </div>
+
+        <!-- Main Settings Section -->
+        <div class="main-settings-section">
+            <div class="main-settings-container">
+                <div class="setting-group">
+                    <label for="quartersToGraduate">Quarters to Graduate:</label>
+                    <select id="quartersToGraduate" onchange="updateDynamicSettings()">
+                        <option value="8">2 Years (8 quarters)</option>
+                        <option value="12" selected>3 Years (12 quarters)</option>
+                        <option value="16">4 Years (16 quarters)</option>
+                        <option value="20">5 Years (20 quarters)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <input type="number" id="customQuarters" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter quarters">
+                </div>
+                
+                <div class="setting-group">
+                    <label for="totalUnitsNeeded">Total Units (Calculated):</label>
+                    <input type="number" id="totalUnitsNeeded" min="120" max="300" value="180" readonly>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="courseCount">Total Courses:</label>
+                    <input type="number" id="courseCount" value="0" readonly>
+                </div>
+                
+                <div class="setting-group">
+                    <label for="academicSystem">Academic System:</label>
+                    <select id="academicSystemMain" onchange="updateAcademicSystem()">
+                        <option value="quarter">Quarter System</option>
+                        <option value="semester">Semester System</option>
+                    </select>
+                </div>
+                
+                <div class="dynamic-info">
+                    <div class="info-item">
+                        <span class="info-label">Recommended Units per Term:</span>
+                        <span id="recommendedUnits" class="info-value">12-16</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Academic Terms:</span>
+                        <span id="academicTerms" class="info-value">12</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Average Units per Term:</span>
+                        <span id="averageUnits" class="info-value">15.0</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -149,7 +200,7 @@
                         </button>
                     </div>
                     <div class="format-requirements">
-                        <strong>Required columns:</strong> Taken, Course Number, Prerequisites, Corequisites, Description, Units, Required or Optional, Difficulty
+                        <strong>Required columns:</strong> Taken, Course Number, Prerequisites, Corequisites, Description, Units, Difficulty
                     </div>
                 </div>
             </div>
@@ -182,58 +233,51 @@
     <div class="settings-modal-overlay" id="settingsModalOverlay" onclick="closeSettingsModal()">
         <div class="settings-modal" onclick="event.stopPropagation()">
             <div class="settings-header">
-                <h3>⚙️ Settings</h3>
+                <h3>⚙️ Advanced Planning Settings</h3>
                 <button class="modal-close" onclick="closeSettingsModal()">×</button>
             </div>
             <div class="settings-content">
                 <div class="settings-section">
-                    <h4>Academic System</h4>
-                    <div class="setting-item">
-                        <label class="setting-label">
-                            <input type="radio" name="academicSystem" value="quarter" id="quarterSystem" checked>
-                            <span class="radio-custom"></span>
-                            Quarter System
-                            <span class="setting-description">Fall, Winter, Spring, Summer</span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <label class="setting-label">
-                            <input type="radio" name="academicSystem" value="semester" id="semesterSystem">
-                            <span class="radio-custom"></span>
-                            Semester System
-                            <span class="setting-description">Fall, Spring</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="settings-section">
-                    <h4>Planning Configuration</h4>
+                    <h4>Explicit Planning Configuration</h4>
+                    <p class="settings-description">Override the dynamic calculations with custom values. Leave blank to use dynamic settings.</p>
+                    
                     <div class="settings-grid">
                         <div class="setting-item">
                             <label for="maxUnits">Max Units per Term</label>
-                            <input type="number" id="maxUnits" min="1" max="30" value="15">
+                            <input type="number" id="maxUnits" min="1" max="30" placeholder="Auto">
                         </div>
                         <div class="setting-item">
                             <label for="minUnits">Min Units per Term</label>
-                            <input type="number" id="minUnits" min="1" max="30" value="12">
+                            <input type="number" id="minUnits" min="1" max="30" placeholder="Auto">
                         </div>
                         <div class="setting-item">
                             <label for="targetUnits">Target Units per Term</label>
-                            <input type="number" id="targetUnits" min="1" max="30" value="13">
+                            <input type="number" id="targetUnits" min="1" max="30" placeholder="Auto">
                         </div>
                         <div class="setting-item">
                             <label for="maxDifficulty">Max Difficulty per Term</label>
-                            <input type="number" id="maxDifficulty" min="1" max="50" value="15">
+                            <input type="number" id="maxDifficulty" min="1" max="50" placeholder="Auto">
                         </div>
                         <div class="setting-item">
                             <label for="targetDifficulty">Target Difficulty per Term</label>
-                            <input type="number" id="targetDifficulty" min="1" max="50" value="12">
+                            <input type="number" id="targetDifficulty" min="1" max="50" placeholder="Auto">
+                        </div>
+                    </div>
+                    
+                    <div class="current-dynamic-values">
+                        <h5>Current Dynamic Values:</h5>
+                        <div class="dynamic-values-grid">
+                            <span>Min Units: <strong id="currentMinUnits">12</strong></span>
+                            <span>Max Units: <strong id="currentMaxUnits">16</strong></span>
+                            <span>Target Units: <strong id="currentTargetUnits">14</strong></span>
+                            <span>Max Difficulty: <strong id="currentMaxDifficulty">15</strong></span>
+                            <span>Target Difficulty: <strong id="currentTargetDifficulty">12</strong></span>
                         </div>
                     </div>
                 </div>
 
                 <div class="settings-actions">
-                    <button class="secondary-button" onclick="resetToDefaults()">Reset to Defaults</button>
+                    <button class="secondary-button" onclick="resetToDefaults()">Reset to Dynamic</button>
                     <button class="primary-button" onclick="saveSettings()">Save Settings</button>
                 </div>
             </div>

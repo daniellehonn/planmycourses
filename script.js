@@ -6,6 +6,13 @@ let pinnedCourses = new Set(); // Track which courses are pinned
 let lockedQuarters = new Set(); // Track which quarters are locked
 let currentAcademicSystem = 'quarter'; // 'quarter' or 'semester'
 
+// Dynamic settings based on graduation timeline
+let dynamicSettings = {
+    quartersToGraduate: 12,
+    useCustomQuarters: false,
+    customQuarters: 16
+};
+
 // Configuration constants for course planning optimization
 const PLANNING_CONFIG = {
     MAX_UNITS_PER_QUARTER: 16,
@@ -23,6 +30,14 @@ const PLANNING_CONFIG = {
         WELL_BELOW_MAX_DIFFICULTY_BONUS: 20,
         UNITS_DEVIATION_PENALTY: 10,
         LATER_QUARTER_PENALTY: 15
+    },
+    // Track which settings are overridden by user
+    overrides: {
+        MAX_UNITS_PER_QUARTER: false,
+        MIN_UNITS_PER_QUARTER: false,
+        TARGET_UNITS_PER_QUARTER: false,
+        MAX_DIFFICULTY_PER_QUARTER: false,
+        TARGET_DIFFICULTY_PER_QUARTER: false
     }
 };
 
@@ -137,8 +152,8 @@ async function processTSVData(tsvData) {
         throw new Error('No data found in TSV file');
     }
 
-    // Validate required columns
-    const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units', 'Required or Optional', 'Difficulty'];
+    // Validate required columns (removed "Required or Optional")
+    const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units', 'Difficulty'];
     const optionalColumns = ['Taken', 'Corequisites'];
     
     const firstRow = parsedData[0];
@@ -162,7 +177,7 @@ async function processTSVData(tsvData) {
         description: row['Description'],
         units: parseInt(row['Units']) || 0, 
         difficulty: parseInt(row['Difficulty']) || 1, 
-        category: determineCategory(row['Required or Optional']),
+        category: "Required", // Default all courses to Required since column was removed
         taken: row['Taken'] ? row['Taken'].trim() : '', // Add taken column
         originalOrder: index 
     }));
@@ -177,10 +192,13 @@ async function processTSVData(tsvData) {
     ALL_CLASSES_DATA = courseData;
 
     // Initialize fresh quarters with no pinned courses
-    initializeQuarters(4);
+    initializeQuarters();
     
     // Process courses with "Taken" assignments
     processTakenCourses();
+    
+    // Recalculate dynamic settings based on the new course data
+    updateDynamicSettings();
     
     renderPlanner();
     document.body.classList.remove('loading');
@@ -321,21 +339,6 @@ function parseTSV(tsvText) {
     });
 }
 
-function determineCategory(requiredOrOptional) {
-    const textValue = requiredOrOptional ? requiredOrOptional.trim().toLowerCase() : "";
-
-    if (textValue.includes('optional')) {
-        return "Optional";
-    }
-    if (textValue.includes('capstone')) {
-        return "Capstone";
-    }
-    if (textValue.includes('external')) { 
-        return "External";
-    }
-    return "Required";
-}
-
 function showError(message) {
     const errorMessage = document.getElementById('errorMessage');
     
@@ -345,7 +348,26 @@ function showError(message) {
     errorMessage.style.display = 'block';
 }
 
-function initializeQuarters(numYears = 4) {
+function calculateRequiredYears() {
+    const quartersToGrad = dynamicSettings.useCustomQuarters ? 
+        dynamicSettings.customQuarters : 
+        dynamicSettings.quartersToGraduate;
+    
+    if (currentAcademicSystem === 'quarter') {
+        // Quarter system: 4 quarters per year
+        return Math.ceil(quartersToGrad / 4);
+    } else {
+        // Semester system: 2 semesters per year
+        return Math.ceil(quartersToGrad / 2);
+    }
+}
+
+function initializeQuarters(numYears = null) {
+    // If numYears not provided, calculate based on graduation timeline
+    if (numYears === null) {
+        numYears = calculateRequiredYears();
+    }
+    
     quartersData = [];
     
     // Define terms based on academic system
@@ -520,11 +542,6 @@ function createClassCard(classData) {
     if (graph[classData.id] && graph[classData.id].unassignedReason) {
         planningNote = graph[classData.id].unassignedReason;
         card.classList.add('class-card-unassigned-failed');
-    } else if (classData.category === "Optional") {
-        const unassignedQ = getQuarterById('unassigned');
-        if (unassignedQ && unassignedQ.classes.includes(classData.id)) {
-            planningNote = "Optional course, not auto-planned.";
-        }
     }
 
     if (planningNote) {
@@ -951,6 +968,40 @@ function secondaryCoursePlacement(quarter, completedCourses, coursesInQuarter, g
     }
 }
 
+function tertiaryCoursePlacement(quarter, completedCourses, coursesInQuarter, graph) {
+    // Third phase: Fill quarters to max units even if difficulty is high
+    // This helps utilize available capacity when difficulty constraints are blocking placement
+    
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (quarter.units < PLANNING_CONFIG.MAX_UNITS_PER_QUARTER && attempts < maxAttempts) {
+        const availableForFill = getAvailableCoursesForPlanning(
+            completedCourses,
+            coursesInQuarter,
+            graph
+        );
+
+        if (availableForFill.length === 0) break;
+
+        let courseAddedToFill = false;
+        for (const courseNode of availableForFill) {
+            const course = courseNode.course;
+            
+            // Only check units constraint, ignore difficulty for this phase
+            const wouldExceedUnits = quarter.units + course.units > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+            
+            if (!wouldExceedUnits && !coursesInQuarter.has(course.id)) {
+                addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
+                courseAddedToFill = true;
+                break;
+            }
+        }
+        if (!courseAddedToFill) break;
+        attempts++;
+    }
+}
+
 function calculateQuarterScore(quarter, course, quarterIndex) {
     const newQuarterUnits = quarter.units + course.units;
     const newQuarterDifficulty = quarter.difficulty + (course.difficulty || 1);
@@ -1062,27 +1113,52 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
             prereqDetail = `Prereq. ${prereqId} missing from data.`;
             break;
         }
-        
-        // Check if prereq is optional AND not taken yet
-        let tempCompleted = new Set();
-        
-        // Include summer courses as completed
-        const summerQuarters = quartersData.filter(q => 
-            q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
-        );
-        summerQuarters.forEach(summerQuarter => {
-            summerQuarter.classes.forEach(courseId => tempCompleted.add(courseId));
-        });
-        
-        // Include academic quarter courses
-        academicQuarters.forEach(q => q.classes.forEach(c => tempCompleted.add(c)));
-        
-        if (prereqCourseData && prereqCourseData.category === "Optional" && !tempCompleted.has(prereqId)) {
-            prereqDetail = `Prereq. ${prereqId} (optional) not taken.`;
-            break;
-        }
     }
-    return prereqDetail || "No suitable quarter (capacity/schedule).";
+    
+    if (prereqDetail) {
+        return prereqDetail;
+    }
+    
+    // Check if it's a capacity issue (units or difficulty)
+    const course = courseNode.course;
+    let hasUnitsCapacity = false;
+    let hasDifficultyCapacity = false;
+    
+    // Include summer courses as completed
+    const summerQuarters = quartersData.filter(q => 
+        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    );
+    let tempCompleted = new Set();
+    summerQuarters.forEach(summerQuarter => {
+        summerQuarter.classes.forEach(courseId => tempCompleted.add(courseId));
+    });
+    
+    // Check each quarter to see what's blocking placement
+    for (const quarter of academicQuarters) {
+        // Check if prerequisites would be satisfied
+        const prereqsSatisfied = checkPrerequisitesSatisfied(courseNode, tempCompleted, graph);
+        
+        if (prereqsSatisfied) {
+            const wouldExceedUnits = quarter.units + course.units > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+            const wouldExceedDifficulty = quarter.difficulty + (course.difficulty || 1) > PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
+            
+            if (!wouldExceedUnits) hasUnitsCapacity = true;
+            if (!wouldExceedDifficulty) hasDifficultyCapacity = true;
+        }
+        
+        // Add this quarter's courses to completed for next iteration
+        quarter.classes.forEach(c => tempCompleted.add(c));
+    }
+    
+    if (hasUnitsCapacity && !hasDifficultyCapacity) {
+        return "Blocked by difficulty constraints. Try increasing max difficulty in Advanced Settings.";
+    } else if (!hasUnitsCapacity && hasDifficultyCapacity) {
+        return "Blocked by unit capacity. Try increasing max units in Advanced Settings.";
+    } else if (!hasUnitsCapacity && !hasDifficultyCapacity) {
+        return "Blocked by both unit and difficulty constraints.";
+    }
+    
+    return "No suitable quarter (capacity/schedule).";
 }
 
 function fallbackCoursePlacement(graph, academicQuarters) {
@@ -1220,9 +1296,7 @@ function finalizeUnassignedCourses(graph) {
             const courseData = findClassById(id);
             if (!courseData) return false;
 
-            if (courseData.category === "Optional") {
-                return true;
-            }
+            // Since all courses are now Required, we only need to check if they're placed
             if (graph[id]) {
                 return !graph[id].placed;
             }
@@ -1268,11 +1342,14 @@ function autoPlanCoreCourses() {
             }
         });
 
-        // Primary course placement
+        // Primary course placement (respects both units and difficulty constraints)
         primaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
 
-        // Secondary placement to meet minimum units
+        // Secondary placement to meet minimum units (respects both constraints)
         secondaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
+
+        // Tertiary placement to maximize unit utilization (ignores difficulty constraints)
+        tertiaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
 
         // Update completed courses (including both pinned and auto-placed)
         quarter.classes.forEach(courseId => completedCourses.add(courseId));
@@ -1280,6 +1357,9 @@ function autoPlanCoreCourses() {
 
     // Fallback placement for remaining courses
     fallbackCoursePlacement(graph, academicQuarters);
+
+    // Final cleanup: assign remaining courses to quarters with most available capacity
+    finalCleanupPlacement(graph, academicQuarters);
 
     // Finalize unassigned courses
     finalizeUnassignedCourses(graph);
@@ -1306,8 +1386,8 @@ function downloadPlan() {
         return;
     }
 
-    // Create TSV content in the same format as input
-    let tsvContent = "Taken\tCourse Number\tPrerequisites\tCorequisites\tDescription\tUnits\tRequired or Optional\tDifficulty\n";
+    // Create TSV content without the "Required or Optional" column
+    let tsvContent = "Taken\tCourse Number\tPrerequisites\tCorequisites\tDescription\tUnits\tDifficulty\n";
     
     // Process all courses in their original order
     ALL_CLASSES_DATA.forEach(courseData => {
@@ -1329,11 +1409,8 @@ function downloadPlan() {
         // Escape tabs and newlines in description
         const description = (courseData.description || '').replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
         
-        // Convert category back to original format
-        const requiredOrOptional = formatCategoryForExport(courseData.category);
-        
-        // Add row to TSV
-        tsvContent += `${takenValue}\t${courseData.name}\t${prerequisites}\t${corequisites}\t${description}\t${courseData.units}\t${requiredOrOptional}\t${courseData.difficulty}\n`;
+        // Add row to TSV (removed Required or Optional column)
+        tsvContent += `${takenValue}\t${courseData.name}\t${prerequisites}\t${corequisites}\t${description}\t${courseData.units}\t${courseData.difficulty}\n`;
     });
     
     // Create and download the file
@@ -1360,22 +1437,6 @@ function formatQuarterForTaken(quarterName) {
         return `${match[1]}, Year ${match[2]}`;
     }
     return quarterName; // Fallback to original name
-}
-
-function formatCategoryForExport(category) {
-    // Convert internal category back to original format
-    switch (category) {
-        case 'Required':
-            return 'Required';
-        case 'Optional':
-            return 'Optional';
-        case 'Capstone':
-            return 'Capstone';
-        case 'External':
-            return 'External';
-        default:
-            return category;
-    }
 }
 
 function processTakenCourses() {
@@ -1619,83 +1680,146 @@ function closeSettingsModal() {
 }
 
 function loadCurrentSettings() {
-    // Load academic system
-    document.getElementById('quarterSystem').checked = currentAcademicSystem === 'quarter';
-    document.getElementById('semesterSystem').checked = currentAcademicSystem === 'semester';
+    // Load academic system in main UI
+    document.getElementById('academicSystemMain').value = currentAcademicSystem;
     
-    // Load planning configuration
-    document.getElementById('maxUnits').value = PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
-    document.getElementById('minUnits').value = PLANNING_CONFIG.MIN_UNITS_PER_QUARTER;
-    document.getElementById('targetUnits').value = PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER;
-    document.getElementById('maxDifficulty').value = PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
-    document.getElementById('targetDifficulty').value = PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER;
+    // Load advanced settings (show current values or empty for dynamic)
+    const maxUnitsInput = document.getElementById('maxUnits');
+    const minUnitsInput = document.getElementById('minUnits');
+    const targetUnitsInput = document.getElementById('targetUnits');
+    const maxDifficultyInput = document.getElementById('maxDifficulty');
+    const targetDifficultyInput = document.getElementById('targetDifficulty');
+    
+    // Only show values if they are overridden
+    maxUnitsInput.value = PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER ? 
+        PLANNING_CONFIG.MAX_UNITS_PER_QUARTER : '';
+    minUnitsInput.value = PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER ? 
+        PLANNING_CONFIG.MIN_UNITS_PER_QUARTER : '';
+    targetUnitsInput.value = PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER ? 
+        PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER : '';
+    maxDifficultyInput.value = PLANNING_CONFIG.overrides.MAX_DIFFICULTY_PER_QUARTER ? 
+        PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER : '';
+    targetDifficultyInput.value = PLANNING_CONFIG.overrides.TARGET_DIFFICULTY_PER_QUARTER ? 
+        PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER : '';
+    
+    // Update dynamic values display
+    const calculated = calculateDynamicSettings();
+    updateDynamicDisplays(calculated);
 }
 
 function saveSettings() {
-    // Save academic system
-    const quarterSystem = document.getElementById('quarterSystem').checked;
-    const newAcademicSystem = quarterSystem ? 'quarter' : 'semester';
+    // Get values from advanced settings
+    const maxUnitsInput = document.getElementById('maxUnits');
+    const minUnitsInput = document.getElementById('minUnits');
+    const targetUnitsInput = document.getElementById('targetUnits');
+    const maxDifficultyInput = document.getElementById('maxDifficulty');
+    const targetDifficultyInput = document.getElementById('targetDifficulty');
     
-    // Save planning configuration
-    const newConfig = {
-        MAX_UNITS_PER_QUARTER: parseInt(document.getElementById('maxUnits').value),
-        MIN_UNITS_PER_QUARTER: parseInt(document.getElementById('minUnits').value),
-        TARGET_UNITS_PER_QUARTER: parseInt(document.getElementById('targetUnits').value),
-        MAX_DIFFICULTY_PER_QUARTER: parseInt(document.getElementById('maxDifficulty').value),
-        TARGET_DIFFICULTY_PER_QUARTER: parseInt(document.getElementById('targetDifficulty').value),
-        MAX_ATTEMPTS_MIN_UNITS: PLANNING_CONFIG.MAX_ATTEMPTS_MIN_UNITS,
-        SCORING: PLANNING_CONFIG.SCORING
-    };
+    // Update overrides and values
+    const newConfig = {};
+    const newOverrides = {};
+    
+    // Max Units
+    if (maxUnitsInput.value.trim() !== '') {
+        newConfig.MAX_UNITS_PER_QUARTER = parseInt(maxUnitsInput.value);
+        newOverrides.MAX_UNITS_PER_QUARTER = true;
+    } else {
+        newOverrides.MAX_UNITS_PER_QUARTER = false;
+    }
+    
+    // Min Units
+    if (minUnitsInput.value.trim() !== '') {
+        newConfig.MIN_UNITS_PER_QUARTER = parseInt(minUnitsInput.value);
+        newOverrides.MIN_UNITS_PER_QUARTER = true;
+    } else {
+        newOverrides.MIN_UNITS_PER_QUARTER = false;
+    }
+    
+    // Target Units
+    if (targetUnitsInput.value.trim() !== '') {
+        newConfig.TARGET_UNITS_PER_QUARTER = parseInt(targetUnitsInput.value);
+        newOverrides.TARGET_UNITS_PER_QUARTER = true;
+    } else {
+        newOverrides.TARGET_UNITS_PER_QUARTER = false;
+    }
+    
+    // Max Difficulty
+    if (maxDifficultyInput.value.trim() !== '') {
+        newConfig.MAX_DIFFICULTY_PER_QUARTER = parseInt(maxDifficultyInput.value);
+        newOverrides.MAX_DIFFICULTY_PER_QUARTER = true;
+    } else {
+        newOverrides.MAX_DIFFICULTY_PER_QUARTER = false;
+    }
+    
+    // Target Difficulty
+    if (targetDifficultyInput.value.trim() !== '') {
+        newConfig.TARGET_DIFFICULTY_PER_QUARTER = parseInt(targetDifficultyInput.value);
+        newOverrides.TARGET_DIFFICULTY_PER_QUARTER = true;
+    } else {
+        newOverrides.TARGET_DIFFICULTY_PER_QUARTER = false;
+    }
     
     // Validate settings
-    if (newConfig.MIN_UNITS_PER_QUARTER > newConfig.MAX_UNITS_PER_QUARTER) {
+    const finalMinUnits = newOverrides.MIN_UNITS_PER_QUARTER ? 
+        newConfig.MIN_UNITS_PER_QUARTER : PLANNING_CONFIG.MIN_UNITS_PER_QUARTER;
+    const finalMaxUnits = newOverrides.MAX_UNITS_PER_QUARTER ? 
+        newConfig.MAX_UNITS_PER_QUARTER : PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+    const finalTargetUnits = newOverrides.TARGET_UNITS_PER_QUARTER ? 
+        newConfig.TARGET_UNITS_PER_QUARTER : PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER;
+    const finalTargetDifficulty = newOverrides.TARGET_DIFFICULTY_PER_QUARTER ? 
+        newConfig.TARGET_DIFFICULTY_PER_QUARTER : PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER;
+    const finalMaxDifficulty = newOverrides.MAX_DIFFICULTY_PER_QUARTER ? 
+        newConfig.MAX_DIFFICULTY_PER_QUARTER : PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
+    
+    if (finalMinUnits > finalMaxUnits) {
         alert('Minimum units cannot be greater than maximum units.');
         return;
     }
     
-    if (newConfig.TARGET_UNITS_PER_QUARTER > newConfig.MAX_UNITS_PER_QUARTER) {
+    if (finalTargetUnits > finalMaxUnits) {
         alert('Target units cannot be greater than maximum units.');
         return;
     }
     
-    if (newConfig.TARGET_DIFFICULTY_PER_QUARTER > newConfig.MAX_DIFFICULTY_PER_QUARTER) {
+    if (finalTargetDifficulty > finalMaxDifficulty) {
         alert('Target difficulty cannot be greater than maximum difficulty.');
         return;
     }
     
     // Apply settings
-    const systemChanged = currentAcademicSystem !== newAcademicSystem;
-    currentAcademicSystem = newAcademicSystem;
-    
-    // Update planning configuration
     Object.assign(PLANNING_CONFIG, newConfig);
+    Object.assign(PLANNING_CONFIG.overrides, newOverrides);
     
-    // If academic system changed, reinitialize quarters
-    if (systemChanged && ALL_CLASSES_DATA.length > 0) {
-        const numYears = Math.max(...quartersData.filter(q => q.id !== 'unassigned').map(q => q.year || 1));
-        initializeQuarters(numYears);
-        renderPlanner();
-    }
+    // Recalculate dynamic settings for non-overridden values
+    updateDynamicSettings();
     
     // Save to localStorage
-    localStorage.setItem('academicSystem', currentAcademicSystem);
     localStorage.setItem('planningConfig', JSON.stringify(PLANNING_CONFIG));
+    localStorage.setItem('dynamicSettings', JSON.stringify(dynamicSettings));
     
     closeSettingsModal();
     
     // Show success message
-    showSuccessMessage('Settings saved successfully!');
+    showSuccessMessage('Advanced settings saved successfully!');
 }
 
 function resetToDefaults() {
-    // Reset to default values
-    document.getElementById('quarterSystem').checked = true;
-    document.getElementById('semesterSystem').checked = false;
-    document.getElementById('maxUnits').value = 15;
-    document.getElementById('minUnits').value = 12;
-    document.getElementById('targetUnits').value = 13;
-    document.getElementById('maxDifficulty').value = 15;
-    document.getElementById('targetDifficulty').value = 12;
+    // Clear all override flags
+    Object.keys(PLANNING_CONFIG.overrides).forEach(key => {
+        PLANNING_CONFIG.overrides[key] = false;
+    });
+    
+    // Clear input fields
+    document.getElementById('maxUnits').value = '';
+    document.getElementById('minUnits').value = '';
+    document.getElementById('targetUnits').value = '';
+    document.getElementById('maxDifficulty').value = '';
+    document.getElementById('targetDifficulty').value = '';
+    
+    // Recalculate dynamic settings
+    updateDynamicSettings();
+    
+    showSuccessMessage('Reset to dynamic settings!');
 }
 
 function showSuccessMessage(message) {
@@ -1752,6 +1876,36 @@ function loadSavedSettings() {
             console.warn('Failed to load saved planning configuration');
         }
     }
+    
+    const savedDynamicSettings = localStorage.getItem('dynamicSettings');
+    if (savedDynamicSettings) {
+        try {
+            const settings = JSON.parse(savedDynamicSettings);
+            Object.assign(dynamicSettings, settings);
+        } catch (e) {
+            console.warn('Failed to load saved dynamic settings');
+        }
+    }
+    
+    // Initialize UI with loaded settings
+    initializeDynamicUI();
+}
+
+function initializeDynamicUI() {
+    // Set main UI values
+    document.getElementById('academicSystemMain').value = currentAcademicSystem;
+    
+    if (dynamicSettings.useCustomQuarters) {
+        document.getElementById('quartersToGraduate').value = 'custom';
+        document.getElementById('customQuarters').value = dynamicSettings.customQuarters;
+        document.getElementById('customQuarters').style.display = 'inline-block';
+    } else {
+        document.getElementById('quartersToGraduate').value = dynamicSettings.quartersToGraduate;
+        document.getElementById('customQuarters').style.display = 'none';
+    }
+    
+    // Calculate and update displays (totalUnitsNeeded is now calculated from course data)
+    updateDynamicSettings();
 }
 
 // New corequisite handling functions
@@ -1807,6 +1961,274 @@ function placeCorequisiteGroup(courseIds, quarter, graph, coursesInQuarter) {
     });
 }
 
+// Dynamic Settings Functions
+function calculateDynamicSettings() {
+    const quartersToGrad = dynamicSettings.useCustomQuarters ? 
+        dynamicSettings.customQuarters : 
+        dynamicSettings.quartersToGraduate;
+    
+    // Calculate academic quarters (excluding summer)
+    const academicQuarters = currentAcademicSystem === 'quarter' ? 
+        Math.floor(quartersToGrad * 0.75) : // 3/4 of quarters are academic (no summer)
+        quartersToGrad; // All semesters are academic
+    
+    // Calculate actual total units and difficulty from loaded course data
+    let actualTotalUnits = 180; // Default fallback
+    let actualTotalDifficulty = 0;
+    let courseCount = 0;
+    
+    if (ALL_CLASSES_DATA && ALL_CLASSES_DATA.length > 0) {
+        // Calculate from actual course data
+        const requiredCourses = ALL_CLASSES_DATA.filter(course => 
+            course.category === "Required" || course.category === "Capstone" || course.category === "External"
+        );
+        
+        actualTotalUnits = requiredCourses.reduce((sum, course) => sum + (course.units || 0), 0);
+        actualTotalDifficulty = requiredCourses.reduce((sum, course) => sum + (course.difficulty || 1), 0);
+        courseCount = requiredCourses.length;
+        
+        // If no required courses found, use all courses
+        if (actualTotalUnits === 0) {
+            actualTotalUnits = ALL_CLASSES_DATA.reduce((sum, course) => sum + (course.units || 0), 0);
+            actualTotalDifficulty = ALL_CLASSES_DATA.reduce((sum, course) => sum + (course.difficulty || 1), 0);
+            courseCount = ALL_CLASSES_DATA.length;
+        }
+    }
+    
+    // Calculate units per term based on actual data
+    const unitsPerTerm = actualTotalUnits / academicQuarters;
+    
+    // Dynamic calculations for balanced distribution
+    const minUnits = Math.max(8, Math.floor(unitsPerTerm * 0.8));
+    const maxUnits = Math.min(22, Math.ceil(unitsPerTerm * 1.06)); // Fine-tuned for balanced distribution
+    const targetUnits = Math.round(unitsPerTerm);
+    
+    // Difficulty calculations based on actual course difficulty data
+    const difficultyPerTerm = actualTotalDifficulty / academicQuarters;
+    const targetDifficulty = Math.round(difficultyPerTerm);
+    const maxDifficulty = Math.round(difficultyPerTerm * 1.4);
+    
+    return {
+        minUnits,
+        maxUnits,
+        targetUnits,
+        targetDifficulty,
+        maxDifficulty,
+        academicQuarters,
+        unitsPerTerm: unitsPerTerm.toFixed(1),
+        actualTotalUnits,
+        courseCount
+    };
+}
+
+function updateDynamicSettings() {
+    const quartersSelect = document.getElementById('quartersToGraduate');
+    const customInput = document.getElementById('customQuarters');
+    
+    // Store previous values to detect changes
+    const previousQuarters = dynamicSettings.useCustomQuarters ? 
+        dynamicSettings.customQuarters : 
+        dynamicSettings.quartersToGraduate;
+    
+    // Update dynamic settings object
+    if (quartersSelect.value === 'custom') {
+        dynamicSettings.useCustomQuarters = true;
+        dynamicSettings.customQuarters = parseInt(customInput.value) || 16;
+        customInput.style.display = 'inline-block';
+    } else {
+        dynamicSettings.useCustomQuarters = false;
+        dynamicSettings.quartersToGraduate = parseInt(quartersSelect.value);
+        customInput.style.display = 'none';
+    }
+    
+    // Check if graduation timeline changed
+    const newQuarters = dynamicSettings.useCustomQuarters ? 
+        dynamicSettings.customQuarters : 
+        dynamicSettings.quartersToGraduate;
+    
+    // If timeline changed and we have course data, reinitialize quarters
+    if (newQuarters !== previousQuarters && ALL_CLASSES_DATA.length > 0) {
+        initializeQuarters();
+        renderPlanner();
+    }
+    
+    // Calculate and apply dynamic settings based on actual course data
+    const calculated = calculateDynamicSettings();
+    
+    // Update PLANNING_CONFIG only for non-overridden values
+    if (!PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER) {
+        PLANNING_CONFIG.MIN_UNITS_PER_QUARTER = calculated.minUnits;
+    }
+    if (!PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER) {
+        PLANNING_CONFIG.MAX_UNITS_PER_QUARTER = calculated.maxUnits;
+    }
+    if (!PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER) {
+        PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER = calculated.targetUnits;
+    }
+    if (!PLANNING_CONFIG.overrides.TARGET_DIFFICULTY_PER_QUARTER) {
+        PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER = calculated.targetDifficulty;
+    }
+    if (!PLANNING_CONFIG.overrides.MAX_DIFFICULTY_PER_QUARTER) {
+        PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER = calculated.maxDifficulty;
+    }
+    
+    // Update UI displays
+    updateDynamicDisplays(calculated);
+    
+    // Save settings
+    saveDynamicSettings();
+}
+
+function updateDynamicDisplays(calculated) {
+    // Update main UI
+    document.getElementById('recommendedUnits').textContent = 
+        `${calculated.minUnits}-${calculated.maxUnits}`;
+    document.getElementById('academicTerms').textContent = calculated.academicQuarters;
+    
+    // Update average units per term
+    const averageUnitsElement = document.getElementById('averageUnits');
+    if (averageUnitsElement) {
+        averageUnitsElement.textContent = calculated.unitsPerTerm;
+    }
+    
+    // Update total units display to show calculated value
+    const totalUnitsInput = document.getElementById('totalUnitsNeeded');
+    if (totalUnitsInput) {
+        totalUnitsInput.value = calculated.actualTotalUnits;
+        // Make it read-only since it's now calculated
+        totalUnitsInput.readOnly = true;
+        totalUnitsInput.style.backgroundColor = '#f8fafc';
+        totalUnitsInput.style.color = '#64748b';
+    }
+    
+    // Update course count display
+    const courseCountInput = document.getElementById('courseCount');
+    if (courseCountInput) {
+        courseCountInput.value = calculated.courseCount;
+        courseCountInput.readOnly = true;
+        courseCountInput.style.backgroundColor = '#f8fafc';
+        courseCountInput.style.color = '#64748b';
+    }
+    
+    // Update advanced settings modal if open
+    const currentMinUnits = document.getElementById('currentMinUnits');
+    const currentMaxUnits = document.getElementById('currentMaxUnits');
+    const currentTargetUnits = document.getElementById('currentTargetUnits');
+    const currentMaxDifficulty = document.getElementById('currentMaxDifficulty');
+    const currentTargetDifficulty = document.getElementById('currentTargetDifficulty');
+    
+    if (currentMinUnits) currentMinUnits.textContent = calculated.minUnits;
+    if (currentMaxUnits) currentMaxUnits.textContent = calculated.maxUnits;
+    if (currentTargetUnits) currentTargetUnits.textContent = calculated.targetUnits;
+    if (currentMaxDifficulty) currentMaxDifficulty.textContent = calculated.maxDifficulty;
+    if (currentTargetDifficulty) currentTargetDifficulty.textContent = calculated.targetDifficulty;
+}
+
+function updateAcademicSystem() {
+    const systemSelect = document.getElementById('academicSystemMain');
+    currentAcademicSystem = systemSelect.value;
+    
+    // Update quarters if data is loaded - use dynamic calculation
+    if (ALL_CLASSES_DATA.length > 0) {
+        initializeQuarters();
+        renderPlanner();
+    }
+    
+    // Recalculate dynamic settings
+    updateDynamicSettings();
+    
+    // Save to localStorage
+    localStorage.setItem('academicSystem', currentAcademicSystem);
+}
+
+function saveDynamicSettings() {
+    localStorage.setItem('dynamicSettings', JSON.stringify(dynamicSettings));
+    localStorage.setItem('planningConfig', JSON.stringify(PLANNING_CONFIG));
+}
+
+function finalCleanupPlacement(graph, academicQuarters) {
+    // Final phase: Assign any remaining unassigned courses to quarters with most available capacity
+    // This runs after all other placement attempts and doesn't change existing assignments
+    // DISREGARDS MAX UNITS - will place courses even if they exceed normal unit limits
+    
+    const unplacedCourses = Object.values(graph).filter(node => 
+        !node.placed && (node.course.category === "Required" || node.course.category === "Capstone" || node.course.category === "External")
+    );
+    
+    if (unplacedCourses.length === 0) return;
+    
+    // Include summer courses as completed prerequisites
+    const summerQuarters = quartersData.filter(q => 
+        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    );
+    const summerCourses = new Set();
+    summerQuarters.forEach(summerQuarter => {
+        summerQuarter.classes.forEach(courseId => summerCourses.add(courseId));
+    });
+    
+    // Sort unplaced courses by priority (original order, then by prerequisites)
+    const sortedUnplacedCourses = unplacedCourses.sort((a, b) => {
+        if (a.originalOrder !== b.originalOrder) return a.originalOrder - b.originalOrder;
+        
+        const aPrereqsUnmet = a.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
+        const bPrereqsUnmet = b.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
+        return aPrereqsUnmet - bPrereqsUnmet;
+    });
+    
+    for (const courseNode of sortedUnplacedCourses) {
+        if (courseNode.placed) continue; // Skip if already placed
+        
+        const course = courseNode.course;
+        let bestQuarter = null;
+        let bestScore = -Infinity;
+        
+        // Check each quarter to find the best fit
+        for (let qIdx = 0; qIdx < academicQuarters.length; qIdx++) {
+            const quarter = academicQuarters[qIdx];
+            
+            // Check if prerequisites are satisfied for this quarter
+            const coursesCompletedBeforeQuarter = new Set();
+            
+            // Include summer courses as completed
+            summerCourses.forEach(courseId => coursesCompletedBeforeQuarter.add(courseId));
+            
+            // Include courses from previous quarters
+            for (let prevQIdx = 0; prevQIdx < qIdx; prevQIdx++) {
+                academicQuarters[prevQIdx].classes.forEach(cId => coursesCompletedBeforeQuarter.add(cId));
+            }
+            
+            // Check if prerequisites are satisfied
+            const prereqsSatisfied = checkPrerequisitesSatisfied(courseNode, coursesCompletedBeforeQuarter, graph);
+            if (!prereqsSatisfied) continue;
+            
+            // Calculate available capacity score (higher is better)
+            // NO LONGER CHECK UNITS CONSTRAINT - just prefer quarters with fewer units
+            const difficultyRemaining = Math.max(0, PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER - quarter.difficulty);
+            
+            // Prioritize quarters with fewer current units and more difficulty capacity
+            // Also prefer earlier quarters (lower qIdx)
+            const capacityScore = (-quarter.units * 2) + (difficultyRemaining * 5) - (qIdx * 1);
+            
+            // Accept ANY quarter where prerequisites are satisfied (no unit limit check)
+            if (capacityScore > bestScore) {
+                bestScore = capacityScore;
+                bestQuarter = quarter;
+            }
+        }
+        
+        // Place the course in the best available quarter (even if it exceeds unit limits)
+        if (bestQuarter) {
+            bestQuarter.classes.push(course.id);
+            courseNode.placed = true;
+            bestQuarter.units += course.units;
+            bestQuarter.difficulty += (course.difficulty || 1);
+            
+            // Clear any unassigned reason since we successfully placed it
+            courseNode.unassignedReason = '';
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
@@ -1816,7 +2238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('dataUrl').value) {
          loadCourseData();
     } else {
-        initializeQuarters(4); 
+        initializeQuarters(); 
         renderPlanner();
     }
 });
