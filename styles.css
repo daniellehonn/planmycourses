@@ -114,16 +114,52 @@ body {
 }
 
 .help-button {
-    background: #ffffff;
-    color: #475569;
-    border: 1px solid #e2e8f0;
-    padding: 12px 20px;
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+    color: white;
+    border: none;
+    padding: 14px 24px;
     border-radius: 12px;
     cursor: pointer;
     font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.help-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.help-button:hover {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(245, 158, 11, 0.4);
+}
+
+.help-button:hover::before {
+    left: 100%;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 4px 16px rgba(245, 158, 11, 0.3);
+    }
+    50% {
+        box-shadow: 0 4px 20px rgba(245, 158, 11, 0.5);
+    }
+}
+
+.help-button {
+    animation: pulse 2s infinite;
 }
 
 .settings-button {
@@ -143,13 +179,6 @@ body {
     width: 20px;
     height: 20px;
     transition: all 0.3s ease;
-}
-
-.help-button:hover {
-    background: #f8fafc;
-    border-color: #cbd5e1;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .settings-button:hover {
@@ -308,9 +337,8 @@ h3 {
 
 .quarter-info {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 4px;
+    align-items: center;
+    gap: 12px;
     font-size: 12px;
 }
 

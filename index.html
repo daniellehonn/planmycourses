@@ -111,7 +111,7 @@
             
             <div class="tab-content">
                 <div id="urlTabContent" class="tab-panel active">
-                    <p class="tab-description">Load course data from a Google Sheets TSV link</p>
+                    <p class="tab-description">Load course data from a Google Sheets TSV link (Please follow the <strong>Setup Guide</strong> to get the link)</p>
                     <div class="input-group">
                         <input type="text" id="dataUrl" placeholder="Paste your TSV URL here..." value="https://docs.google.com/spreadsheets/d/e/2PACX-1vTNWA1UaaWkFd4AysP7SUaPZ5ihDv5kU3Pt9rNs2hIFd-FpETRtmbN655rEPTdJ6jO4ybIgu660FwKz/pub?output=tsv">
                         <button onclick="loadCourseData()" class="primary-button">
@@ -120,7 +120,6 @@
                         </button>
                     </div>
                 </div>
-                
                 <div id="fileTabContent" class="tab-panel">
                     <p class="tab-description">Upload a TSV file from your computer</p>
                     <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('fileInput').click()">
