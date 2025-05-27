@@ -1895,6 +1895,9 @@ function initializeDynamicUI() {
     // Set main UI values
     document.getElementById('academicSystemMain').value = currentAcademicSystem;
     
+    // Update graduation timeline UI based on academic system
+    updateAcademicSystemUI();
+    
     if (dynamicSettings.useCustomQuarters) {
         document.getElementById('quartersToGraduate').value = 'custom';
         document.getElementById('customQuarters').value = dynamicSettings.customQuarters;
@@ -1906,6 +1909,45 @@ function initializeDynamicUI() {
     
     // Calculate and update displays (totalUnitsNeeded is now calculated from course data)
     updateDynamicSettings();
+}
+
+function updateAcademicSystemUI() {
+    // Update graduation timeline label and options based on academic system
+    const graduationLabel = document.getElementById('graduationTimelineLabel');
+    const graduationSelect = document.getElementById('quartersToGraduate');
+    const customInput = document.getElementById('customQuarters');
+    
+    if (currentAcademicSystem === 'semester') {
+        // Update label for semester system
+        graduationLabel.textContent = 'Semesters to Graduate:';
+        
+        // Update dropdown options for semesters
+        graduationSelect.innerHTML = `
+            <option value="4">2 Years (4 semesters)</option>
+            <option value="6" selected>3 Years (6 semesters)</option>
+            <option value="8">4 Years (8 semesters)</option>
+            <option value="10">5 Years (10 semesters)</option>
+            <option value="custom">Custom</option>
+        `;
+        
+        // Update placeholder for custom input
+        customInput.placeholder = 'Enter semesters';
+    } else {
+        // Update label for quarter system
+        graduationLabel.textContent = 'Quarters to Graduate:';
+        
+        // Update dropdown options for quarters
+        graduationSelect.innerHTML = `
+            <option value="8">2 Years (8 quarters)</option>
+            <option value="12" selected>3 Years (12 quarters)</option>
+            <option value="16">4 Years (16 quarters)</option>
+            <option value="20">5 Years (20 quarters)</option>
+            <option value="custom">Custom</option>
+        `;
+        
+        // Update placeholder for custom input
+        customInput.placeholder = 'Enter quarters';
+    }
 }
 
 // New corequisite handling functions
@@ -2128,6 +2170,31 @@ function updateAcademicSystem() {
     const systemSelect = document.getElementById('academicSystemMain');
     currentAcademicSystem = systemSelect.value;
     
+    // Update graduation timeline UI based on academic system
+    updateAcademicSystemUI();
+    
+    // Adjust current selection to equivalent term count when switching systems
+    if (!dynamicSettings.useCustomQuarters) {
+        const currentTerms = dynamicSettings.quartersToGraduate;
+        if (currentAcademicSystem === 'semester') {
+            // Convert quarters to semesters (divide by 2)
+            const equivalentSemesters = Math.round(currentTerms / 2);
+            dynamicSettings.quartersToGraduate = equivalentSemesters;
+            document.getElementById('quartersToGraduate').value = equivalentSemesters;
+        } else {
+            // Convert semesters to quarters (multiply by 2)
+            const equivalentQuarters = currentTerms * 2;
+            dynamicSettings.quartersToGraduate = equivalentQuarters;
+            document.getElementById('quartersToGraduate').value = equivalentQuarters;
+        }
+    }
+    
+    // Handle custom selection
+    if (dynamicSettings.useCustomQuarters) {
+        document.getElementById('quartersToGraduate').value = 'custom';
+        document.getElementById('customQuarters').style.display = 'inline-block';
+    }
+    
     // Update quarters if data is loaded - use dynamic calculation
     if (ALL_CLASSES_DATA.length > 0) {
         initializeQuarters();
@@ -2229,9 +2296,36 @@ function finalCleanupPlacement(graph, academicQuarters) {
     }
 }
 
+// Toggle main settings section
+function toggleMainSettings() {
+    const container = document.getElementById('mainSettingsContainer');
+    const icon = document.getElementById('mainSettingsIcon');
+    
+    container.classList.toggle('collapsed');
+    icon.classList.toggle('collapsed');
+    
+    // Save state to localStorage
+    const isCollapsed = container.classList.contains('collapsed');
+    localStorage.setItem('mainSettingsCollapsed', isCollapsed);
+}
+
+// Initialize main settings collapse state
+function initializeMainSettingsState() {
+    const isCollapsed = localStorage.getItem('mainSettingsCollapsed') === 'true';
+    if (isCollapsed) {
+        const container = document.getElementById('mainSettingsContainer');
+        const icon = document.getElementById('mainSettingsIcon');
+        container.classList.add('collapsed');
+        icon.classList.add('collapsed');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
+    
+    // Initialize main settings collapse state
+    initializeMainSettingsState();
     
     setupDragAndDrop();
     

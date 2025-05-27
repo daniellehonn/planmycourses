@@ -111,9 +111,13 @@
 
         <!-- Main Settings Section -->
         <div class="main-settings-section">
-            <div class="main-settings-container">
+            <div class="settings-section-header" onclick="toggleMainSettings()">
+                <h3>📊 Planning Settings</h3>
+                <span class="collapse-icon" id="mainSettingsIcon">▼</span>
+            </div>
+            <div class="main-settings-container" id="mainSettingsContainer">
                 <div class="setting-group">
-                    <label for="quartersToGraduate">Quarters to Graduate:</label>
+                    <label for="quartersToGraduate" id="graduationTimelineLabel">Quarters to Graduate:</label>
                     <select id="quartersToGraduate" onchange="updateDynamicSettings()">
                         <option value="8">2 Years (8 quarters)</option>
                         <option value="12" selected>3 Years (12 quarters)</option>
