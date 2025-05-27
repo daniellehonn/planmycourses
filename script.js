@@ -3,6 +3,7 @@ let quartersData = [];
 let draggedClassId = null;
 let graph = {};
 let pinnedCourses = new Set(); // Track which courses are pinned
+let lockedQuarters = new Set(); // Track which quarters are locked
 
 // Configuration constants for course planning optimization
 const PLANNING_CONFIG = {
@@ -40,6 +41,7 @@ async function loadCourseData() {
 
         // Clear all pinned courses and do a hard reset
         pinnedCourses.clear();
+        lockedQuarters.clear();
         graph = {};
 
         const response = await fetch(url);
@@ -192,11 +194,32 @@ function renderPlanner() {
             quarterDiv.id = quarter.id;
             quarterDiv.dataset.quarterId = quarter.id; 
 
+            // Add locked class if quarter is locked
+            if (isQuarterLocked(quarter.id)) {
+                quarterDiv.classList.add('locked');
+            }
+
             const headerDiv = document.createElement('div');
             headerDiv.className = 'quarter-header';
+            
+            // Create lock button
+            const lockButton = document.createElement('button');
+            lockButton.className = 'quarter-lock-button';
+            lockButton.innerHTML = isQuarterLocked(quarter.id) ? '🔒' : '🔓';
+            lockButton.title = isQuarterLocked(quarter.id) ? 'Unlock quarter' : 'Lock quarter';
+            lockButton.onclick = (e) => {
+                e.stopPropagation();
+                toggleQuarterLock(quarter.id);
+            };
+            
             headerDiv.innerHTML = `<span>${quarter.name.replace(` Year ${i}`, '')}</span> 
-                                 <span class="quarter-units" id="units-${quarter.id}">${quarter.units} units</span>
-                                 <span class="quarter-units" id="difficulty-${quarter.id}">${quarter.difficulty} difficulty</span>`;
+                                 <div class="quarter-info">
+                                     <span class="quarter-units" id="units-${quarter.id}">${quarter.units} units</span>
+                                     <span class="quarter-units" id="difficulty-${quarter.id}">${quarter.difficulty} difficulty</span>
+                                 </div>`;
+            
+            // Add lock button to header
+            headerDiv.appendChild(lockButton);
             quarterDiv.appendChild(headerDiv);
             
             quarter.classes.sort((aId, bId) => { 
@@ -890,6 +913,63 @@ function isPinnedCourse(classId) {
 function getQuarterPinnedCourses(quarterId) {
     const quarter = getQuarterById(quarterId);
     return quarter ? quarter.pinnedClasses : [];
+}
+
+function lockQuarter(quarterId) {
+    if (quarterId === 'unassigned') return; // Can't lock unassigned section
+    
+    const quarter = getQuarterById(quarterId);
+    if (!quarter) return;
+    
+    // Check if any courses in the quarter are invalid
+    const hasInvalidCourses = quarter.classes.some(classId => {
+        const cardElement = document.getElementById(`class-${classId.replace(/\s+/g, '-')}`);
+        return cardElement && cardElement.classList.contains('invalid');
+    });
+    
+    if (hasInvalidCourses) {
+        alert('Cannot lock quarter with courses that have unmet prerequisites (red courses). Please resolve prerequisite issues first.');
+        return;
+    }
+    
+    // Pin all courses in the quarter
+    quarter.classes.forEach(classId => {
+        if (!quarter.pinnedClasses.includes(classId)) {
+            quarter.pinnedClasses.push(classId);
+            pinnedCourses.add(classId);
+        }
+    });
+    
+    lockedQuarters.add(quarterId);
+    renderPlanner();
+}
+
+function unlockQuarter(quarterId) {
+    if (quarterId === 'unassigned') return; // Can't unlock unassigned section
+    
+    const quarter = getQuarterById(quarterId);
+    if (!quarter) return;
+    
+    // Unpin all courses in the quarter
+    quarter.classes.forEach(classId => {
+        quarter.pinnedClasses = quarter.pinnedClasses.filter(id => id !== classId);
+        pinnedCourses.delete(classId);
+    });
+    
+    lockedQuarters.delete(quarterId);
+    renderPlanner();
+}
+
+function isQuarterLocked(quarterId) {
+    return lockedQuarters.has(quarterId);
+}
+
+function toggleQuarterLock(quarterId) {
+    if (isQuarterLocked(quarterId)) {
+        unlockQuarter(quarterId);
+    } else {
+        lockQuarter(quarterId);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

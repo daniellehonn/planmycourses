@@ -176,6 +176,7 @@ h2, h3 {
     border: 1px solid #d1e0ec;
     min-height: 100px;
     margin-bottom: 10px;
+    position: relative;
 }
 
 .quarter-header {
@@ -185,6 +186,43 @@ h2, h3 {
     margin-bottom: 8px;
     font-weight: bold;
     color: #003b6b;
+}
+
+.quarter-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.quarter-lock-button {
+    background: none;
+    border: none;
+    font-size: 1.1em;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 3px;
+    opacity: 0.7;
+    transition: opacity 0.2s, background-color 0.2s;
+    margin-left: 8px;
+}
+
+.quarter-lock-button:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Locked quarter styles */
+.quarter.locked {
+    background-color: #f0f8ff; /* Light blue background */
+    border-color: #4a90e2; /* Blue border */
+    border-width: 2px;
+    box-shadow: 0 2px 4px rgba(74, 144, 226, 0.2);
+}
+
+.quarter.locked .quarter-header {
+    color: #2c5aa0;
+    font-weight: bold;
 }
 
 .quarter-units {
@@ -515,6 +553,16 @@ h2, h3 {
         flex-direction: column;
         gap: 5px;
         align-items: flex-start;
+    }
+
+    .quarter-info {
+        align-items: flex-start;
+    }
+
+    .quarter-lock-button {
+        align-self: flex-end;
+        margin-left: 0;
+        margin-top: 5px;
     }
 
     .quarter-units {
