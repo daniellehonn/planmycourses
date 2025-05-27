@@ -349,9 +349,17 @@ function createClassCard(classData) {
     }
     
     const prereqsText = classData.prerequisites.join(', ') || 'None';
-    let tooltipContent = `<strong>${classData.description || 'No description.'}</strong><br><strong>Prereqs:</strong> ${prereqsText}`;
+    
+    // Create structured tooltip content
+    let tooltipContent = `
+        <span class="course-title">${classData.description || 'No description available'}</span>
+        <div class="course-prereqs">
+            <span class="prereq-label">Prerequisites:</span>
+            <span class="prereq-list">${prereqsText}</span>
+        </div>
+    `;
+    
     let planningNote = "";
-
     if (graph[classData.id] && graph[classData.id].unassignedReason) {
         planningNote = graph[classData.id].unassignedReason;
         card.classList.add('class-card-unassigned-failed');
@@ -363,7 +371,10 @@ function createClassCard(classData) {
     }
 
     if (planningNote) {
-         tooltipContent += `<br><strong style="color: ${card.classList.contains('class-card-unassigned-failed') ? '#ffdddd' : '#ddddff'};">Planning Note:</strong> ${planningNote}`;
+        const noteClass = card.classList.contains('class-card-unassigned-failed') ? 'warning' : '';
+        tooltipContent += `<div class="planning-note ${noteClass}">
+            <strong>Planning Note:</strong> ${planningNote}
+        </div>`;
     }
 
     // Create pin button
