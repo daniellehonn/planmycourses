@@ -4,6 +4,7 @@ let draggedClassId = null;
 let graph = {};
 let pinnedCourses = new Set(); // Track which courses are pinned
 let lockedQuarters = new Set(); // Track which quarters are locked
+let currentAcademicSystem = 'quarter'; // 'quarter' or 'semester'
 
 // Configuration constants for course planning optimization
 const PLANNING_CONFIG = {
@@ -209,12 +210,17 @@ function showError(message) {
 
 function initializeQuarters(numYears = 4) {
     quartersData = [];
-    const quarterNames = ["Summer", "Fall", "Winter", "Spring"];
+    
+    // Define terms based on academic system
+    const termNames = currentAcademicSystem === 'quarter' 
+        ? ["Summer", "Fall", "Winter", "Spring"]
+        : ["Fall", "Spring"];
+    
     for (let i = 0; i < numYears; i++) {
-        quarterNames.forEach(qName => {
+        termNames.forEach(termName => {
             quartersData.push({
-                id: `${qName.toLowerCase()}${i + 1}`,
-                name: `${qName} Year ${i + 1}`,
+                id: `${termName.toLowerCase()}${i + 1}`,
+                name: `${termName} Year ${i + 1}`,
                 year: i + 1,
                 classes: [], 
                 pinnedClasses: [], // Track pinned courses in this quarter
@@ -244,11 +250,20 @@ function getQuarterById(quarterId) {
 
 function getQuarterChronologicalOrder(quarter) {
     if (!quarter || quarter.id === 'unassigned') return -1; 
+    
     let seasonOrder = 0;
-    if (quarter.name.startsWith("Fall")) seasonOrder = 1;
-    else if (quarter.name.startsWith("Winter")) seasonOrder = 2;
-    else if (quarter.name.startsWith("Spring")) seasonOrder = 3;
-    return (quarter.year - 1) * 4 + seasonOrder;
+    if (currentAcademicSystem === 'quarter') {
+        if (quarter.name.startsWith("Fall")) seasonOrder = 1;
+        else if (quarter.name.startsWith("Winter")) seasonOrder = 2;
+        else if (quarter.name.startsWith("Spring")) seasonOrder = 3;
+        else if (quarter.name.startsWith("Summer")) seasonOrder = 0; // Summer comes first
+        return (quarter.year - 1) * 4 + seasonOrder;
+    } else {
+        // Semester system
+        if (quarter.name.startsWith("Fall")) seasonOrder = 0;
+        else if (quarter.name.startsWith("Spring")) seasonOrder = 1;
+        return (quarter.year - 1) * 2 + seasonOrder;
+    }
 }
 
 function renderPlanner() {
@@ -1272,7 +1287,169 @@ function setupDragAndDrop() {
     }
 }
 
+// Settings Modal Functions
+function toggleSettingsModal() {
+    const overlay = document.getElementById('settingsModalOverlay');
+    if (overlay.classList.contains('active')) {
+        closeSettingsModal();
+    } else {
+        openSettingsModal();
+    }
+}
+
+function openSettingsModal() {
+    const overlay = document.getElementById('settingsModalOverlay');
+    overlay.classList.add('active');
+    
+    // Load current settings into the form
+    loadCurrentSettings();
+}
+
+function closeSettingsModal() {
+    const overlay = document.getElementById('settingsModalOverlay');
+    overlay.classList.remove('active');
+}
+
+function loadCurrentSettings() {
+    // Load academic system
+    document.getElementById('quarterSystem').checked = currentAcademicSystem === 'quarter';
+    document.getElementById('semesterSystem').checked = currentAcademicSystem === 'semester';
+    
+    // Load planning configuration
+    document.getElementById('maxUnits').value = PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+    document.getElementById('minUnits').value = PLANNING_CONFIG.MIN_UNITS_PER_QUARTER;
+    document.getElementById('targetUnits').value = PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER;
+    document.getElementById('maxDifficulty').value = PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
+    document.getElementById('targetDifficulty').value = PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER;
+}
+
+function saveSettings() {
+    // Save academic system
+    const quarterSystem = document.getElementById('quarterSystem').checked;
+    const newAcademicSystem = quarterSystem ? 'quarter' : 'semester';
+    
+    // Save planning configuration
+    const newConfig = {
+        MAX_UNITS_PER_QUARTER: parseInt(document.getElementById('maxUnits').value),
+        MIN_UNITS_PER_QUARTER: parseInt(document.getElementById('minUnits').value),
+        TARGET_UNITS_PER_QUARTER: parseInt(document.getElementById('targetUnits').value),
+        MAX_DIFFICULTY_PER_QUARTER: parseInt(document.getElementById('maxDifficulty').value),
+        TARGET_DIFFICULTY_PER_QUARTER: parseInt(document.getElementById('targetDifficulty').value),
+        MAX_ATTEMPTS_MIN_UNITS: PLANNING_CONFIG.MAX_ATTEMPTS_MIN_UNITS,
+        SCORING: PLANNING_CONFIG.SCORING
+    };
+    
+    // Validate settings
+    if (newConfig.MIN_UNITS_PER_QUARTER > newConfig.MAX_UNITS_PER_QUARTER) {
+        alert('Minimum units cannot be greater than maximum units.');
+        return;
+    }
+    
+    if (newConfig.TARGET_UNITS_PER_QUARTER > newConfig.MAX_UNITS_PER_QUARTER) {
+        alert('Target units cannot be greater than maximum units.');
+        return;
+    }
+    
+    if (newConfig.TARGET_DIFFICULTY_PER_QUARTER > newConfig.MAX_DIFFICULTY_PER_QUARTER) {
+        alert('Target difficulty cannot be greater than maximum difficulty.');
+        return;
+    }
+    
+    // Apply settings
+    const systemChanged = currentAcademicSystem !== newAcademicSystem;
+    currentAcademicSystem = newAcademicSystem;
+    
+    // Update planning configuration
+    Object.assign(PLANNING_CONFIG, newConfig);
+    
+    // If academic system changed, reinitialize quarters
+    if (systemChanged && ALL_CLASSES_DATA.length > 0) {
+        const numYears = Math.max(...quartersData.filter(q => q.id !== 'unassigned').map(q => q.year || 1));
+        initializeQuarters(numYears);
+        renderPlanner();
+    }
+    
+    // Save to localStorage
+    localStorage.setItem('academicSystem', currentAcademicSystem);
+    localStorage.setItem('planningConfig', JSON.stringify(PLANNING_CONFIG));
+    
+    closeSettingsModal();
+    
+    // Show success message
+    showSuccessMessage('Settings saved successfully!');
+}
+
+function resetToDefaults() {
+    // Reset to default values
+    document.getElementById('quarterSystem').checked = true;
+    document.getElementById('semesterSystem').checked = false;
+    document.getElementById('maxUnits').value = 15;
+    document.getElementById('minUnits').value = 12;
+    document.getElementById('targetUnits').value = 13;
+    document.getElementById('maxDifficulty').value = 15;
+    document.getElementById('targetDifficulty').value = 12;
+}
+
+function showSuccessMessage(message) {
+    // Create a temporary success message
+    const successDiv = document.createElement('div');
+    successDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #10b981;
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        z-index: 3000;
+        font-size: 14px;
+        font-weight: 500;
+        opacity: 0;
+        transform: translateY(-10px);
+        transition: all 0.3s ease;
+    `;
+    successDiv.textContent = message;
+    document.body.appendChild(successDiv);
+    
+    // Animate in
+    setTimeout(() => {
+        successDiv.style.opacity = '1';
+        successDiv.style.transform = 'translateY(0)';
+    }, 100);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        successDiv.style.opacity = '0';
+        successDiv.style.transform = 'translateY(-10px)';
+        setTimeout(() => {
+            document.body.removeChild(successDiv);
+        }, 300);
+    }, 3000);
+}
+
+// Load settings from localStorage on page load
+function loadSavedSettings() {
+    const savedSystem = localStorage.getItem('academicSystem');
+    if (savedSystem) {
+        currentAcademicSystem = savedSystem;
+    }
+    
+    const savedConfig = localStorage.getItem('planningConfig');
+    if (savedConfig) {
+        try {
+            const config = JSON.parse(savedConfig);
+            Object.assign(PLANNING_CONFIG, config);
+        } catch (e) {
+            console.warn('Failed to load saved planning configuration');
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    // Load saved settings first
+    loadSavedSettings();
+    
     setupDragAndDrop();
     
     if (document.getElementById('dataUrl').value) {
