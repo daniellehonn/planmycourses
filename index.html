@@ -11,70 +11,72 @@
     <!-- Sidebar for instructions -->
     <div class="sidebar" id="instructionsSidebar">
         <div class="sidebar-header">
-            <h3>📋 Setup Instructions</h3>
+            <h1>📋 Setup Instructions</h3>
             <button class="sidebar-close" onclick="toggleSidebar()">×</button>
         </div>
         <div class="sidebar-content">
             <div class="instructions-step">
-                <h4>Step 1: Access the Template</h4>
+                <h2>Step 1: Access the Template</h4>
                 <ol>
                     <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
-                    <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own version</li>
+                    <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own editable version</li>
+                    <img src="./img/makeacopy.png" alt="Screenshot showing how to make a copy of the template" style="max-width: 40%; margin: 10px 0; border: 1px solid #ccc;">
                 </ol>
             </div>
             
             <div class="instructions-step">
-                <h4>Step 2: Customize Your Course List</h4>
+                <h2>Step 2: Customize Your Course List</h4>
+                <p>Replace the sample data with your own courses</p>
+                <h3><strong>For each course, fill in:</strong></h3>
                 <ol>
-                    <li><strong>Replace the sample courses</strong> with the classes you want to take</li>
-                    <li><strong>Order courses by priority</strong> - list your most important courses first, as the algorithm will prioritize them in this order</li>
-                    <li><strong>Set difficulty levels</strong> (optional):
+                    <li><strong>Course Name & Number</strong> (e.g., “CS 101”):</li>
+                    <li><strong>Taken:</strong>
                         <ul>
-                            <li>Research each course's workload and assign difficulty ratings</li>
-                            <li>If you prefer to skip this step, set all courses to difficulty level "1"</li>
+                            <li>Write <code>Not Assigned</code> if you haven’t taken it yet</li>
+                            <li>Otherwise, use format like: <code>"Fall, Year 1"</code></li>
                         </ul>
                     </li>
+                    <li><strong>Prerequisites:</strong>
+                        <ul>
+                            <li>Write <code>None</code> or list course numbers separated by commas</li>
+                            <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
+                        </ul>
+                    </li>
+                    <li><strong>Units</strong>: How many units the course is worth</li>
+                    <li><strong>Difficulty</strong> (1 = easiest, 8 = hardest)
+                        <ul>
+                            <li>Skip this if unsure — defaults to 1</li>
+                        </ul>
+                    </li>
+
+                        
                 </ol>
-                
-                <div class="required-info">
-                    <h5>Required Information for Each Course:</h5>
-                    <ul>
-                        <li><strong>Taken</strong> (list when you have taken the course)</li>
-                            <ul>
-                                <li><code>Not Assigned</code> if you haven't taken the course yet</li>
-                                <li>Otherwise, list when you've taken the course in the format "Fall, Year 1"</li>
-                            </ul>
-                        <li><strong>Course Number</strong> (e.g., "CS 101")</li>
-                        <li><strong>Prerequisites</strong> (list any required courses that must be completed first)
-                            <ul>
-                                <li><code>None</code> if no prerequisites are required</li>
-                                <li>Otherwise, list the course number of the prerequisite course(s) separated by commas</li>
-                                <li><strong>Important</strong>: The prerequisite course(s) must also be listed on the spreadsheet and the name must match exactly</li>
-                            </ul>
-                        </li>
-                        <li><strong>Units</strong> (number of units the course is worth)</li>
-                        <li><strong>Difficulty</strong> (1-8, where 1 is easiest and 8 is hardest)</li>
-                    </ul>
-                </div>
+                <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨ Pro Tip:</strong> Put your most important courses at the top — the planner uses this order to prioritize!</p>
             </div>
-            
+                
+
             <div class="instructions-step">
-                <h4>Step 3: Export Your Data</h4>
+                <h2>Step 3: Export Your Data</h4>
                 <ol>
                     <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish to web</strong></li>
-                    <li>In the dropdown menu, change from "Web page" to <strong>"Tab-separated values (.tsv)"</strong></li>
+                    <img src="./img/publishtoweb.png" alt="Screenshot showing how to publish your Google Sheet" style="max-width: 60%; margin: 10px 0; border: 1px solid #ccc;">
+                    <li>In the dropdown menu, change from <strong>"Web page"</strong> to <strong>"Tab-separated values"</strong></li>
+                    <img src="./img/publishastsv.png" alt="Screenshot showing how to change the format to TSV" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
                     <li>Click <strong>Publish</strong> and copy the generated link</li>
+                    <img src="./img/linktocopy.png" alt="Screenshot showing how to copy the link" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
                 </ol>
             </div>
             
             <div class="instructions-step">
-                <h4>Step 4: Connect to Course Planner</h4>
+                <h2>Step 4: Connect to Course Planner</h4>
                 <ol>
                     <li>Paste the copied link into the <strong>Load Course Data</strong> field</li>
-                    <li><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</li>
                 </ol>
-                <p><em>Your course planner is now ready to generate your personalized schedule!</em></p>
+                <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</p>
             </div>
+            <p> </p>
+            <h2><em>🎉 Congrats! Your course planner is now ready to go!</em></h2>
+
         </div>
     </div>
 
@@ -98,7 +100,7 @@
         </div>
 
         <div class="url-input-container">
-            <h3>Load Course Data</h3>
+            <h2>Load Course Data</h2>
             
             <div class="data-input-tabs">
                 <button class="tab-button active" onclick="switchTab('url')" id="urlTab">

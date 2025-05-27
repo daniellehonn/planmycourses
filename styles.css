@@ -15,8 +15,8 @@ body {
 .sidebar {
     position: fixed;
     top: 0;
-    right: -500px;
-    width: 500px;
+    right: -50vw;
+    width: 650px;
     height: 100vh;
     background: #ffffff;
     backdrop-filter: blur(20px);
@@ -230,6 +230,7 @@ h2, h3 {
 h2 {
     font-size: 20px;
     margin-bottom: 16px;
+    color: #235eb1;
 }
 
 h3 {
@@ -839,14 +840,14 @@ h3 {
 .instructions-step h4 {
     color: #0f172a;
     margin-bottom: 12px;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 600;
 }
 
 .instructions-step h5 {
     color: #334155;
     margin: 16px 0 8px 0;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
 }
 
@@ -856,9 +857,10 @@ h3 {
 }
 
 .instructions-step li {
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     line-height: 1.6;
     color: #475569;
+    font-size: 15px;
 }
 
 .required-info {
