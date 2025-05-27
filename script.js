@@ -877,6 +877,67 @@ function toggleSidebar() {
     }
 }
 
+function downloadPlan() {
+    if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) {
+        alert('No course data loaded. Please load course data first.');
+        return;
+    }
+
+    // Create CSV content
+    let csvContent = "Quarter,Course,Units,Difficulty,Prerequisites,Description,Category,Status\n";
+    
+    // Get academic quarters in chronological order
+    const academicQuarters = quartersData
+        .filter(q => q.id !== 'unassigned')
+        .sort((a, b) => getQuarterChronologicalOrder(a) - getQuarterChronologicalOrder(b));
+    
+    // Add courses from each quarter
+    academicQuarters.forEach(quarter => {
+        quarter.classes.forEach(classId => {
+            const classData = findClassById(classId);
+            if (classData) {
+                const prerequisites = classData.prerequisites.length > 0 ? classData.prerequisites.join(', ') : 'None';
+                const description = (classData.description || '').replace(/"/g, '""'); // Escape quotes
+                const status = isPinnedCourse(classId) ? 'Pinned' : 
+                              isQuarterLocked(quarter.id) ? 'Locked' : 'Planned';
+                
+                csvContent += `"${quarter.name}","${classData.name}",${classData.units},${classData.difficulty},"${prerequisites}","${description}","${classData.category}","${status}"\n`;
+            }
+        });
+    });
+    
+    // Add unassigned courses
+    const unassignedQuarter = getQuarterById('unassigned');
+    if (unassignedQuarter && unassignedQuarter.classes.length > 0) {
+        unassignedQuarter.classes.forEach(classId => {
+            const classData = findClassById(classId);
+            if (classData) {
+                const prerequisites = classData.prerequisites.length > 0 ? classData.prerequisites.join(', ') : 'None';
+                const description = (classData.description || '').replace(/"/g, '""'); // Escape quotes
+                const status = 'Unassigned';
+                
+                csvContent += `"Unassigned","${classData.name}",${classData.units},${classData.difficulty},"${prerequisites}","${description}","${classData.category}","${status}"\n`;
+            }
+        });
+    }
+    
+    // Create and download the file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `course_plan_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } else {
+        alert('Download not supported in this browser. Please try a different browser.');
+    }
+}
+
 function pinCourse(classId, quarterId) {
     // Remove from current location
     quartersData.forEach(quarter => {

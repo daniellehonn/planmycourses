@@ -123,12 +123,18 @@ body {
     margin-bottom: 10px;
 }
 
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
 h2, h3 {
     color: #005596; /* UCLA Blue */
     margin-top: 0;
 }
 
-#autoPlanButton {
+#autoPlanButton, #downloadButton {
     background-color: #007bff;
     color: white;
     border: none;
@@ -137,8 +143,17 @@ h2, h3 {
     cursor: pointer;
     font-size: 0.9em;
 }
-#autoPlanButton:hover {
+
+#autoPlanButton:hover, #downloadButton:hover {
     background-color: #0056b3;
+}
+
+#downloadButton {
+    background-color: #28a745;
+}
+
+#downloadButton:hover {
+    background-color: #218838;
 }
 
 .unassigned-classes {
@@ -544,7 +559,13 @@ h2, h3 {
         align-items: flex-start;
     }
 
-    #autoPlanButton {
+    .action-buttons {
+        width: 100%;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    #autoPlanButton, #downloadButton {
         width: 100%;
         padding: 10px;
     }
