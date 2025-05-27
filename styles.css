@@ -6,6 +6,103 @@ body {
     color: #333;
 }
 
+/* Sidebar styles */
+.sidebar {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 400px;
+    height: 100vh;
+    background-color: #fff;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+    transition: right 0.3s ease;
+    z-index: 1000;
+    overflow-y: auto;
+}
+
+.sidebar.open {
+    right: 0;
+}
+
+.sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+    background-color: #f8f9fa;
+}
+
+.sidebar-header h3 {
+    margin: 0;
+    color: #005596;
+}
+
+.sidebar-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.sidebar-close:hover {
+    background-color: #e9ecef;
+}
+
+.sidebar-content {
+    padding: 20px;
+}
+
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Header section styles */
+.header-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.help-button {
+    background-color: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s;
+}
+
+.help-button:hover {
+    background-color: #218838;
+}
+
 .planner-container {
     display: flex;
     flex-direction: column;
@@ -291,6 +388,7 @@ h2, h3 {
     padding: 15px;
 }
 
+/* Instructions step styles for sidebar */
 .instructions-step {
     margin-bottom: 20px;
 }
@@ -430,6 +528,23 @@ h2, h3 {
     .class-card {
         padding: 12px 8px;
         touch-action: none;
+    }
+
+    /* Sidebar responsive styles */
+    .sidebar {
+        width: 100vw;
+        right: -100vw;
+    }
+
+    .header-section {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .help-button {
+        width: 100%;
+        padding: 12px;
     }
 }
 

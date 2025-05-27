@@ -38,6 +38,10 @@ async function loadCourseData() {
         document.body.classList.add('loading');
         errorMessage.style.display = 'none';
 
+        // Clear all pinned courses and do a hard reset
+        pinnedCourses.clear();
+        graph = {};
+
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch data (status: ${response.status})`);
@@ -63,6 +67,7 @@ async function loadCourseData() {
             originalOrder: index 
         }));
 
+        // Initialize fresh quarters with no pinned courses
         initializeQuarters(4);
         renderPlanner();
         document.body.classList.remove('loading');
@@ -274,6 +279,13 @@ function handlePinToggle(classId) {
         // Find current quarter of the course
         const currentQuarter = quartersData.find(q => q.classes.includes(classId));
         if (currentQuarter && currentQuarter.id !== 'unassigned') {
+            // Check if the course is currently marked as invalid (red)
+            const cardElement = document.getElementById(`class-${classId.replace(/\s+/g, '-')}`);
+            if (cardElement && cardElement.classList.contains('invalid')) {
+                alert('Cannot pin courses with unmet prerequisites (red courses). Please resolve prerequisite issues first.');
+                return;
+            }
+            
             pinCourse(classId, currentQuarter.id);
         } else {
             alert('Cannot pin courses in unassigned section. Please move the course to a quarter first.');
@@ -829,16 +841,16 @@ function autoPlanCoreCourses() {
     renderPlanner();
 }
 
-function toggleInstructions() {
-    const content = document.getElementById('instructionsContent');
-    const toggle = document.getElementById('instructionsToggle');
+function toggleSidebar() {
+    const sidebar = document.getElementById('instructionsSidebar');
+    const overlay = document.getElementById('sidebarOverlay');
     
-    if (content.classList.contains('expanded')) {
-        content.classList.remove('expanded');
-        toggle.classList.remove('rotated');
+    if (sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
     } else {
-        content.classList.add('expanded');
-        toggle.classList.add('rotated');
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
     }
 }
 

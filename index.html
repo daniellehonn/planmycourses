@@ -8,72 +8,80 @@
 </head>
 <body>
 
-    <div class="planner-container">
-        <h1>Interactive Class Planner</h1>
-
-        <!-- Instructions Section -->
-        <div class="instructions-container">
-            <div class="instructions-header" onclick="toggleInstructions()">
-                <h3>📋 Setup Instructions</h3>
-                <span class="instructions-toggle" id="instructionsToggle">▼</span>
+    <!-- Sidebar for instructions -->
+    <div class="sidebar" id="instructionsSidebar">
+        <div class="sidebar-header">
+            <h3>📋 Setup Instructions</h3>
+            <button class="sidebar-close" onclick="toggleSidebar()">×</button>
+        </div>
+        <div class="sidebar-content">
+            <div class="instructions-step">
+                <h4>Step 1: Access the Template</h4>
+                <ol>
+                    <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/1L9747MiiE8_PSgVDORB1xwn31MZOsxTxjmjewWpO1Cs/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
+                    <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own version</li>
+                </ol>
             </div>
-            <div class="instructions-content" id="instructionsContent">
-                <div class="instructions-step">
-                    <h4>Step 1: Access the Template</h4>
-                    <ol>
-                        <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/1L9747MiiE8_PSgVDORB1xwn31MZOsxTxjmjewWpO1Cs/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
-                        <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own version</li>
-                    </ol>
-                </div>
+            
+            <div class="instructions-step">
+                <h4>Step 2: Customize Your Course List</h4>
+                <ol>
+                    <li><strong>Replace the sample courses</strong> with the classes you want to take</li>
+                    <li><strong>Order courses by priority</strong> - list your most important courses first, as the algorithm will prioritize them in this order</li>
+                    <li><strong>Set difficulty levels</strong> (optional):
+                        <ul>
+                            <li>Research each course's workload and assign difficulty ratings</li>
+                            <li>If you prefer to skip this step, set all courses to difficulty level "1"</li>
+                        </ul>
+                    </li>
+                </ol>
                 
-                <div class="instructions-step">
-                    <h4>Step 2: Customize Your Course List</h4>
-                    <ol>
-                        <li><strong>Replace the sample courses</strong> with the classes you want to take</li>
-                        <li><strong>Order courses by priority</strong> - list your most important courses first, as the algorithm will prioritize them in this order</li>
-                        <li><strong>Set difficulty levels</strong> (optional):
+                <div class="required-info">
+                    <h5>Required Information for Each Course:</h5>
+                    <ul>
+                        <li><strong>Course Number</strong> (e.g., "CS 101")</li>
+                        <li><strong>Prerequisites</strong> (list any required courses that must be completed first)
                             <ul>
-                                <li>Research each course's workload and assign difficulty ratings</li>
-                                <li>If you prefer to skip this step, set all courses to difficulty level "1"</li>
+                                <li><code>None</code> if no prerequisites are required</li>
+                                <li>Otherwise, list the course number of the prerequisite course(s) separated by commas</li>
+                                <li><strong>Important</strong>: The prerequisite course(s) must also be listed on the spreadsheet and the name must match exactly</li>
                             </ul>
                         </li>
-                    </ol>
-                    
-                    <div class="required-info">
-                        <h5>Required Information for Each Course:</h5>
-                        <ul>
-                            <li><strong>Course Number</strong> (e.g., "CS 101")</li>
-                            <li><strong>Prerequisites</strong> (list any required courses that must be completed first)
-                                <ul>
-                                    <li><code>None</code> if no prerequisites are required</li>
-                                    <li>Otherwise, list the course number of the prerequisite course(s) separated by commas</li>
-                                    <li><strong>Important</strong>: The prerequisite course(s) must also be listed on the spreadsheet and the name must match exactly</li>
-                                </ul>
-                            </li>
-                            <li><strong>Units</strong> (number of units the course is worth)</li>
-                            <li><strong>Difficulty</strong> (1-8, where 1 is easiest and 8 is hardest)</li>
-                        </ul>
-                    </div>
-                </div>
-                
-                <div class="instructions-step">
-                    <h4>Step 3: Export Your Data</h4>
-                    <ol>
-                        <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish to web</strong></li>
-                        <li>In the dropdown menu, change from "Web page" to <strong>"Tab-separated values (.tsv)"</strong></li>
-                        <li>Click <strong>Publish</strong> and copy the generated link</li>
-                    </ol>
-                </div>
-                
-                <div class="instructions-step">
-                    <h4>Step 4: Connect to Course Planner</h4>
-                    <ol>
-                        <li>Paste the copied link into the field below</li>
-                        <li><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</li>
-                    </ol>
-                    <p><em>Your course planner is now ready to generate your personalized schedule!</em></p>
+                        <li><strong>Units</strong> (number of units the course is worth)</li>
+                        <li><strong>Difficulty</strong> (1-8, where 1 is easiest and 8 is hardest)</li>
+                    </ul>
                 </div>
             </div>
+            
+            <div class="instructions-step">
+                <h4>Step 3: Export Your Data</h4>
+                <ol>
+                    <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish to web</strong></li>
+                    <li>In the dropdown menu, change from "Web page" to <strong>"Tab-separated values (.tsv)"</strong></li>
+                    <li>Click <strong>Publish</strong> and copy the generated link</li>
+                </ol>
+            </div>
+            
+            <div class="instructions-step">
+                <h4>Step 4: Connect to Course Planner</h4>
+                <ol>
+                    <li>Paste the copied link into the field below</li>
+                    <li><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</li>
+                </ol>
+                <p><em>Your course planner is now ready to generate your personalized schedule!</em></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <div class="planner-container">
+        <div class="header-section">
+            <h1>Interactive Class Planner</h1>
+            <button class="help-button" onclick="toggleSidebar()" title="Show setup instructions">
+                📋 Setup Guide
+            </button>
         </div>
 
         <div class="url-input-container">
