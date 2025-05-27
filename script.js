@@ -50,39 +50,126 @@ async function loadCourseData() {
         }
 
         const tsvData = await response.text();
-        const parsedData = parseTSV(tsvData);
+        await processTSVData(tsvData);
         
-        if (parsedData.length === 0) {
-            throw new Error('No data found in TSV');
-        }
-
-        ALL_CLASSES_DATA = parsedData.map((row, index) => ({ 
-            id: row['Class Symbol'],
-            name: row['Class Symbol'],
-            prerequisites: (row['Prerequisites'] && row['Prerequisites'].trim().toLowerCase() !== 'none' && row['Prerequisites'].trim() !== '')
-                         ? row['Prerequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p) 
-                         : [],
-            description: row['Description'],
-            units: parseInt(row['Units']) || 0, 
-            difficulty: parseInt(row['Difficulty']) || 1, 
-            category: determineCategory(row['Required or Optional']),
-            taken: row['Taken'] ? row['Taken'].trim() : '',
-            originalOrder: index 
-        }));
-
-        // Initialize fresh quarters with no pinned courses
-        initializeQuarters(4);
-        
-        // Process courses with "Taken" assignments
-        processTakenCourses();
-        
-        renderPlanner();
-        document.body.classList.remove('loading');
     } catch (error) {
         console.error("Error in loadCourseData:", error);
         showError("Error loading data: " + error.message);
         document.body.classList.remove('loading');
     }
+}
+
+function handleFileSelect(event) {
+    const fileInput = event.target;
+    const loadFileButton = document.getElementById('loadFileButton');
+    const errorMessage = document.getElementById('errorMessage');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        
+        // Check file extension
+        const fileNameStr = file.name.toLowerCase();
+        if (!fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+            showError("Please select a TSV file (.tsv or .txt extension)");
+            loadFileButton.disabled = true;
+            fileInfo.style.display = 'none';
+            return;
+        }
+        
+        // Show file info
+        fileName.textContent = file.name;
+        fileInfo.style.display = 'flex';
+        loadFileButton.disabled = false;
+        errorMessage.style.display = 'none';
+    } else {
+        fileInfo.style.display = 'none';
+        loadFileButton.disabled = true;
+    }
+}
+
+async function loadCourseDataFromFile() {
+    const fileInput = document.getElementById('fileInput');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    if (!fileInput.files.length) {
+        showError("Please select a file first");
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    
+    try {
+        document.body.classList.add('loading');
+        errorMessage.style.display = 'none';
+
+        // Clear all pinned courses and do a hard reset
+        pinnedCourses.clear();
+        lockedQuarters.clear();
+        graph = {};
+
+        // Read file content
+        const tsvData = await readFileAsText(file);
+        await processTSVData(tsvData);
+        
+    } catch (error) {
+        console.error("Error in loadCourseDataFromFile:", error);
+        showError("Error loading file: " + error.message);
+        document.body.classList.remove('loading');
+    }
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = (e) => reject(new Error("Failed to read file"));
+        reader.readAsText(file);
+    });
+}
+
+async function processTSVData(tsvData) {
+    const parsedData = parseTSV(tsvData);
+    
+    if (parsedData.length === 0) {
+        throw new Error('No data found in TSV file');
+    }
+
+    // Validate required columns
+    const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units', 'Required or Optional', 'Difficulty'];
+    const optionalColumns = ['Taken'];
+    
+    const firstRow = parsedData[0];
+    const availableColumns = Object.keys(firstRow);
+    
+    const missingColumns = requiredColumns.filter(col => !availableColumns.includes(col));
+    if (missingColumns.length > 0) {
+        throw new Error(`Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}`);
+    }
+
+    ALL_CLASSES_DATA = parsedData.map((row, index) => ({ 
+        id: row['Course Number'],
+        name: row['Course Number'],
+        prerequisites: (row['Prerequisites'] && row['Prerequisites'].trim().toLowerCase() !== 'none' && row['Prerequisites'].trim() !== '')
+                     ? row['Prerequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p) 
+                     : [],
+        description: row['Description'],
+        units: parseInt(row['Units']) || 0, 
+        difficulty: parseInt(row['Difficulty']) || 1, 
+        category: determineCategory(row['Required or Optional']),
+        taken: row['Taken'] ? row['Taken'].trim() : '', // Add taken column
+        originalOrder: index 
+    }));
+
+    // Initialize fresh quarters with no pinned courses
+    initializeQuarters(4);
+    
+    // Process courses with "Taken" assignments
+    processTakenCourses();
+    
+    renderPlanner();
+    document.body.classList.remove('loading');
 }
 
 function parseTSV(tsvText) {
@@ -888,58 +975,72 @@ function downloadPlan() {
         return;
     }
 
-    // Create CSV content
-    let csvContent = "Quarter,Course,Units,Difficulty,Prerequisites,Description,Category,Status\n";
+    // Create TSV content in the same format as input
+    let tsvContent = "Taken\tCourse Number\tPrerequisites\tDescription\tUnits\tRequired or Optional\tDifficulty\n";
     
-    // Get academic quarters in chronological order
-    const academicQuarters = quartersData
-        .filter(q => q.id !== 'unassigned')
-        .sort((a, b) => getQuarterChronologicalOrder(a) - getQuarterChronologicalOrder(b));
-    
-    // Add courses from each quarter
-    academicQuarters.forEach(quarter => {
-        quarter.classes.forEach(classId => {
-            const classData = findClassById(classId);
-            if (classData) {
-                const prerequisites = classData.prerequisites.length > 0 ? classData.prerequisites.join(', ') : 'None';
-                const description = (classData.description || '').replace(/"/g, '""'); // Escape quotes
-                const status = isPinnedCourse(classId) ? 'Pinned' : 
-                              isQuarterLocked(quarter.id) ? 'Locked' : 'Planned';
-                
-                csvContent += `"${quarter.name}","${classData.name}",${classData.units},${classData.difficulty},"${prerequisites}","${description}","${classData.category}","${status}"\n`;
-            }
-        });
+    // Process all courses in their original order
+    ALL_CLASSES_DATA.forEach(courseData => {
+        // Find which quarter this course is in
+        let takenValue = 'Not Assigned';
+        const courseQuarter = quartersData.find(q => q.classes.includes(courseData.id));
+        
+        if (courseQuarter && courseQuarter.id !== 'unassigned') {
+            // Convert quarter ID back to "Season, Year X" format
+            takenValue = formatQuarterForTaken(courseQuarter.name);
+        }
+        
+        // Format prerequisites
+        const prerequisites = courseData.prerequisites.length > 0 ? courseData.prerequisites.join(', ') : 'None';
+        
+        // Escape tabs and newlines in description
+        const description = (courseData.description || '').replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
+        
+        // Convert category back to original format
+        const requiredOrOptional = formatCategoryForExport(courseData.category);
+        
+        // Add row to TSV
+        tsvContent += `${takenValue}\t${courseData.name}\t${prerequisites}\t${description}\t${courseData.units}\t${requiredOrOptional}\t${courseData.difficulty}\n`;
     });
     
-    // Add unassigned courses
-    const unassignedQuarter = getQuarterById('unassigned');
-    if (unassignedQuarter && unassignedQuarter.classes.length > 0) {
-        unassignedQuarter.classes.forEach(classId => {
-            const classData = findClassById(classId);
-            if (classData) {
-                const prerequisites = classData.prerequisites.length > 0 ? classData.prerequisites.join(', ') : 'None';
-                const description = (classData.description || '').replace(/"/g, '""'); // Escape quotes
-                const status = 'Unassigned';
-                
-                csvContent += `"Unassigned","${classData.name}",${classData.units},${classData.difficulty},"${prerequisites}","${description}","${classData.category}","${status}"\n`;
-            }
-        });
-    }
-    
     // Create and download the file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([tsvContent], { type: 'text/tab-separated-values;charset=utf-8;' });
     const link = document.createElement('a');
     
     if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `course_plan_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute('download', `course_plan_${new Date().toISOString().split('T')[0]}.tsv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
     } else {
         alert('Download not supported in this browser. Please try a different browser.');
+    }
+}
+
+function formatQuarterForTaken(quarterName) {
+    // Convert "Fall Year 1" to "Fall, Year 1"
+    const match = quarterName.match(/^(Fall|Winter|Spring|Summer)\s+Year\s+(\d+)$/i);
+    if (match) {
+        return `${match[1]}, Year ${match[2]}`;
+    }
+    return quarterName; // Fallback to original name
+}
+
+function formatCategoryForExport(category) {
+    // Convert internal category back to original format
+    switch (category) {
+        case 'Required':
+            return 'Required';
+        case 'Optional':
+            return 'Optional';
+        case 'Capstone':
+            return 'Capstone';
+        case 'External':
+            return 'External';
+        default:
+            return category;
     }
 }
 
@@ -1107,7 +1208,62 @@ function toggleQuarterLock(quarterId) {
     }
 }
 
+function switchTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(tabName + 'Tab').classList.add('active');
+    
+    // Update tab panels
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+    document.getElementById(tabName + 'TabContent').classList.add('active');
+}
+
+// Add drag and drop functionality
+function setupDragAndDrop() {
+    const fileUploadArea = document.getElementById('fileUploadArea');
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        fileUploadArea.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        fileUploadArea.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        fileUploadArea.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight(e) {
+        fileUploadArea.classList.add('dragover');
+    }
+    
+    function unhighlight(e) {
+        fileUploadArea.classList.remove('dragover');
+    }
+    
+    fileUploadArea.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length > 0) {
+            const fileInput = document.getElementById('fileInput');
+            fileInput.files = files;
+            handleFileSelect({ target: fileInput });
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    setupDragAndDrop();
+    
     if (document.getElementById('dataUrl').value) {
          loadCourseData();
     } else {

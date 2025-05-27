@@ -18,7 +18,7 @@
             <div class="instructions-step">
                 <h4>Step 1: Access the Template</h4>
                 <ol>
-                    <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/1L9747MiiE8_PSgVDORB1xwn31MZOsxTxjmjewWpO1Cs/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
+                    <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
                     <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own version</li>
                 </ol>
             </div>
@@ -39,6 +39,11 @@
                 <div class="required-info">
                     <h5>Required Information for Each Course:</h5>
                     <ul>
+                        <li><strong>Taken</strong> (list when you have taken the course)</li>
+                            <ul>
+                                <li><code>Not Assigned</code> if you haven't taken the course yet</li>
+                                <li>Otherwise, list when you've taken the course in the format "Fall, Year 1"</li>
+                            </ul>
                         <li><strong>Course Number</strong> (e.g., "CS 101")</li>
                         <li><strong>Prerequisites</strong> (list any required courses that must be completed first)
                             <ul>
@@ -86,8 +91,51 @@
 
         <div class="url-input-container">
             <h3>Load Course Data</h3>
-            <input type="text" id="dataUrl" placeholder="Enter TSV data URL" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQzIeB-9hthrIcenYCRTaZs6vnde7wGXS9dX1y__N-iUU6sBfJEJi_LjzrkbVpN90SGQJ0d5cYppD7t/pub?output=tsv">
-            <button onclick="loadCourseData()">Load Data</button>
+            
+            <div class="data-input-tabs">
+                <button class="tab-button active" onclick="switchTab('url')" id="urlTab">
+                    🌐 From URL
+                </button>
+                <button class="tab-button" onclick="switchTab('file')" id="fileTab">
+                    📁 From File
+                </button>
+            </div>
+            
+            <div class="tab-content">
+                <div id="urlTabContent" class="tab-panel active">
+                    <p class="tab-description">Load course data from a Google Sheets TSV link</p>
+                    <div class="input-group">
+                        <input type="text" id="dataUrl" placeholder="Paste your TSV URL here..." value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQzIeB-9hthrIcenYCRTaZs6vnde7wGXS9dX1y__N-iUU6sBfJEJi_LjzrkbVpN90SGQJ0d5cYppD7t/pub?output=tsv">
+                        <button onclick="loadCourseData()" class="primary-button">
+                            <span class="button-icon">🚀</span>
+                            Load Data
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="fileTabContent" class="tab-panel">
+                    <p class="tab-description">Upload a TSV file from your computer</p>
+                    <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('fileInput').click()">
+                        <div class="upload-icon">📄</div>
+                        <div class="upload-text">
+                            <strong>Click to select a TSV file</strong>
+                            <span>or drag and drop here</span>
+                        </div>
+                        <input type="file" id="fileInput" accept=".tsv,.txt" onchange="handleFileSelect(event)" style="display: none;">
+                    </div>
+                    <div class="file-info" id="fileInfo" style="display: none;">
+                        <span class="file-name" id="fileName"></span>
+                        <button onclick="loadCourseDataFromFile()" class="primary-button" id="loadFileButton" disabled>
+                            <span class="button-icon">📤</span>
+                            Load File
+                        </button>
+                    </div>
+                    <div class="format-requirements">
+                        <strong>Required columns:</strong> Taken, Class Symbol, Prerequisites, Description, Units, Required or Optional, Difficulty
+                    </div>
+                </div>
+            </div>
+            
             <div id="errorMessage" class="error-message"></div>
         </div>
 
