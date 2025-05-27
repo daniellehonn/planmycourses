@@ -531,6 +531,7 @@ function createClassCard(classData) {
         const noteClass = card.classList.contains('class-card-unassigned-failed') ? 'warning' : '';
         tooltipContent += `<div class="planning-note ${noteClass}">
             <strong>Planning Note:</strong> ${planningNote}
+            <p>Try playing around with the max units to get your desired results!</p>
         </div>`;
     }
 
