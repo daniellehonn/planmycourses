@@ -498,18 +498,33 @@ h3 {
 }
 
 .tooltip .course-prereqs {
-    margin-bottom: 6px;
+    margin-top: 8px;
 }
 
 .tooltip .prereq-label {
-    font-weight: 500;
-    color: #cbd5e1;
-    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    font-size: 12px;
 }
 
 .tooltip .prereq-list {
-    color: #e2e8f0;
-    font-size: 11px;
+    color: #64748b;
+    font-size: 12px;
+}
+
+.tooltip .course-coreqs {
+    margin-top: 8px;
+}
+
+.tooltip .coreq-label {
+    font-weight: 600;
+    color: #475569;
+    font-size: 12px;
+}
+
+.tooltip .coreq-list {
+    color: #64748b;
+    font-size: 12px;
 }
 
 .tooltip .planning-note {
@@ -899,11 +914,16 @@ h3 {
     color: #dc2626;
     margin-top: 12px;
     display: none;
-    padding: 12px 16px;
+    padding: 16px 20px;
     background: #fef2f2;
     border: 1px solid #fecaca;
     border-radius: 12px;
     font-size: 14px;
+    line-height: 1.6;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 @media screen and (max-width: 768px) {

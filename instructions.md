@@ -18,6 +18,11 @@
     - `None` if no prerequisites are required
     - Otherwise, list the course number of the prerequisite course(s) separated by commas
     - **Important**: The prerequisite course(s) must also be listed on the spreadsheet and the name must match exactly
+- **Corequisites** (list any courses that must be taken concurrently)
+    - `None` if no corequisites are required
+    - Otherwise, list the course number of the corequisite course(s) separated by commas
+    - **Important**: Corequisite courses will be automatically placed in the same quarter
+    - The corequisite course(s) must also be listed on the spreadsheet and the name must match exactly
 - **Units** (number of units the course is worth)
 - **Difficulty** (1-8, where 1 is easiest and 8 is hardest)
 

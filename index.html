@@ -19,6 +19,7 @@
                 <h2>Step 1: Access the Template</h4>
                 <ol>
                     <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
+                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;">If you would love to help and contribute a template for your specific major at your specific school, please share your sheet or reach out to me at <a href="mailto:daniellehonnn@gmail.com">daniellehonnn@gmail.com</a>!</p>
                     <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own editable version</li>
                     <img src="./img/makeacopy.png" alt="Screenshot showing how to make a copy of the template" style="max-width: 40%; margin: 10px 0; border: 1px solid #ccc;">
                 </ol>
@@ -27,12 +28,13 @@
             <div class="instructions-step">
                 <h2>Step 2: Customize Your Course List</h4>
                 <p>Replace the sample data with your own courses</p>
+                <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨ PLEASE NOTE:</strong> If you have fulfilled a course elsewhere (eg. CC, AP, IB, etc.), please don't include it in your course list or list it as a prerequisite/corequisite!</p>
                 <h3><strong>For each course, fill in:</strong></h3>
                 <ol>
-                    <li><strong>Course Name & Number</strong> (e.g., “CS 101”):</li>
+                    <li><strong>Course Name & Number</strong> (e.g., "CS 101"):</li>
                     <li><strong>Taken:</strong>
                         <ul>
-                            <li>Write <code>Not Assigned</code> if you haven’t taken it yet</li>
+                            <li>Write <code>Not Assigned</code> if you haven't taken it yet</li>
                             <li>Otherwise, use format like: <code>"Fall, Year 1"</code></li>
                         </ul>
                     </li>
@@ -40,6 +42,13 @@
                         <ul>
                             <li>Write <code>None</code> or list course numbers separated by commas</li>
                             <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
+                        </ul>
+                    </li>
+                    <li><strong>Corequisites:</strong>
+                        <ul>
+                            <li>Write <code>None</code> or list course numbers separated by commas</li>
+                            <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
+                            <li><strong>📅</strong>: Corequisite courses will be automatically placed in the same quarter</li>
                         </ul>
                     </li>
                     <li><strong>Units</strong>: How many units the course is worth</li>
@@ -74,7 +83,7 @@
                 </ol>
                 <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</p>
             </div>
-            <p> </p>
+            <p>You can mess around with some of the settings to get your desired results (eg. increase the max units per quarter, etc.)</p>
             <h2><em>🎉 Congrats! Your course planner is now ready to go!</em></h2>
 
         </div>
@@ -113,9 +122,9 @@
             
             <div class="tab-content">
                 <div id="urlTabContent" class="tab-panel active">
-                    <p class="tab-description">Load course data from a Google Sheets TSV link (Please follow the <strong>Setup Guide</strong> to get the link)</p>
+                    <p class="tab-description">Load course data from a Google Sheets TSV link (Please follow the <a href="#" onclick="toggleSidebar()">Setup Guide</a> to get the link)</p>
                     <div class="input-group">
-                        <input type="text" id="dataUrl" placeholder="Paste your TSV URL here..." value="https://docs.google.com/spreadsheets/d/e/2PACX-1vTNWA1UaaWkFd4AysP7SUaPZ5ihDv5kU3Pt9rNs2hIFd-FpETRtmbN655rEPTdJ6jO4ybIgu660FwKz/pub?output=tsv">
+                        <input type="text" id="dataUrl" placeholder="Paste your TSV URL here..." value="">
                         <button onclick="loadCourseData()" class="primary-button">
                             <span class="button-icon">🚀</span>
                             Load Data
@@ -140,7 +149,7 @@
                         </button>
                     </div>
                     <div class="format-requirements">
-                        <strong>Required columns:</strong> Taken, Class Symbol, Prerequisites, Description, Units, Required or Optional, Difficulty
+                        <strong>Required columns:</strong> Taken, Course Number, Prerequisites, Corequisites, Description, Units, Required or Optional, Difficulty
                     </div>
                 </div>
             </div>

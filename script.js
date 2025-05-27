@@ -8,7 +8,7 @@ let currentAcademicSystem = 'quarter'; // 'quarter' or 'semester'
 
 // Configuration constants for course planning optimization
 const PLANNING_CONFIG = {
-    MAX_UNITS_PER_QUARTER: 15,
+    MAX_UNITS_PER_QUARTER: 16,
     MIN_UNITS_PER_QUARTER: 12,
     TARGET_UNITS_PER_QUARTER: 13,
     MAX_DIFFICULTY_PER_QUARTER: 15,
@@ -139,7 +139,7 @@ async function processTSVData(tsvData) {
 
     // Validate required columns
     const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units', 'Required or Optional', 'Difficulty'];
-    const optionalColumns = ['Taken'];
+    const optionalColumns = ['Taken', 'Corequisites'];
     
     const firstRow = parsedData[0];
     const availableColumns = Object.keys(firstRow);
@@ -149,11 +149,15 @@ async function processTSVData(tsvData) {
         throw new Error(`Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}`);
     }
 
-    ALL_CLASSES_DATA = parsedData.map((row, index) => ({ 
+    // Parse course data
+    const courseData = parsedData.map((row, index) => ({ 
         id: row['Course Number'],
         name: row['Course Number'],
         prerequisites: (row['Prerequisites'] && row['Prerequisites'].trim().toLowerCase() !== 'none' && row['Prerequisites'].trim() !== '')
                      ? row['Prerequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p) 
+                     : [],
+        corequisites: (row['Corequisites'] && row['Corequisites'].trim().toLowerCase() !== 'none' && row['Corequisites'].trim() !== '')
+                     ? row['Corequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p) 
                      : [],
         description: row['Description'],
         units: parseInt(row['Units']) || 0, 
@@ -163,6 +167,15 @@ async function processTSVData(tsvData) {
         originalOrder: index 
     }));
 
+    // Validate the parsed data
+    validateTSVData(courseData);
+
+    // Show validation success message
+    console.log(`✅ TSV Validation Passed: ${courseData.length} courses loaded successfully`);
+
+    // If validation passes, assign to global variable
+    ALL_CLASSES_DATA = courseData;
+
     // Initialize fresh quarters with no pinned courses
     initializeQuarters(4);
     
@@ -171,6 +184,127 @@ async function processTSVData(tsvData) {
     
     renderPlanner();
     document.body.classList.remove('loading');
+}
+
+function validateTSVData(courseData) {
+    const validationErrors = [];
+    
+    // 0. Check for empty or invalid course numbers
+    courseData.forEach((course, index) => {
+        const courseNumber = course.id.trim();
+        if (!courseNumber || courseNumber === '') {
+            validationErrors.push(`Empty course number found at row ${index + 2}`);
+        }
+    });
+    
+    // 1. Check for duplicate course numbers
+    const courseNumbers = new Map();
+    courseData.forEach((course, index) => {
+        const courseNumber = course.id.trim();
+        if (courseNumber) { // Only check non-empty course numbers
+            if (courseNumbers.has(courseNumber)) {
+                validationErrors.push(`Duplicate course number "${courseNumber}" found at rows ${courseNumbers.get(courseNumber) + 2} and ${index + 2}`);
+            } else {
+                courseNumbers.set(courseNumber, index);
+            }
+        }
+    });
+
+    // Create a set of all valid course numbers for prerequisite/corequisite checking
+    const allCourseNumbers = new Set(courseData.map(course => course.id.trim()).filter(id => id));
+
+    // 2. Check that all prerequisites exist as courses and are not self-referencing
+    courseData.forEach((course, index) => {
+        course.prerequisites.forEach(prereqId => {
+            const prereqIdTrimmed = prereqId.trim();
+            
+            // Check for self-referencing prerequisite
+            if (prereqIdTrimmed === course.id.trim()) {
+                validationErrors.push(`Course "${course.id}" (row ${index + 2}) lists itself as a prerequisite`);
+                return;
+            }
+            
+            // Check if prerequisite exists
+            if (!allCourseNumbers.has(prereqIdTrimmed)) {
+                validationErrors.push(`Course "${course.id}" (row ${index + 2}) lists prerequisite "${prereqId}" which is not found in the course list`);
+            }
+        });
+    });
+
+    // 3. Check that corequisites are symmetric (mutual) and not self-referencing
+    courseData.forEach((course, index) => {
+        course.corequisites.forEach(coreqId => {
+            const coreqIdTrimmed = coreqId.trim();
+            
+            // Check for self-referencing corequisite
+            if (coreqIdTrimmed === course.id.trim()) {
+                validationErrors.push(`Course "${course.id}" (row ${index + 2}) lists itself as a corequisite`);
+                return;
+            }
+            
+            // First check if the corequisite course exists
+            if (!allCourseNumbers.has(coreqIdTrimmed)) {
+                validationErrors.push(`Course "${course.id}" (row ${index + 2}) lists corequisite "${coreqId}" which is not found in the course list`);
+                return;
+            }
+
+            // Find the corequisite course and check if it lists this course as a corequisite
+            const coreqCourse = courseData.find(c => c.id.trim() === coreqIdTrimmed);
+            if (coreqCourse) {
+                const hasMutualCoreq = coreqCourse.corequisites.some(c => c.trim() === course.id.trim());
+                if (!hasMutualCoreq) {
+                    const coreqRowIndex = courseData.findIndex(c => c.id.trim() === coreqIdTrimmed) + 2;
+                    validationErrors.push(`Asymmetric corequisite relationship: Course "${course.id}" (row ${index + 2}) lists "${coreqId}" as a corequisite, but "${coreqId}" (row ${coreqRowIndex}) does not list "${course.id}" as a corequisite`);
+                }
+            }
+        });
+    });
+
+    // 4. Check for circular prerequisite dependencies (basic check)
+    courseData.forEach((course, index) => {
+        course.prerequisites.forEach(prereqId => {
+            const prereqCourse = courseData.find(c => c.id.trim() === prereqId.trim());
+            if (prereqCourse && prereqCourse.prerequisites.some(p => p.trim() === course.id.trim())) {
+                validationErrors.push(`Circular prerequisite dependency detected between "${course.id}" (row ${index + 2}) and "${prereqId}"`);
+            }
+        });
+    });
+
+    // If there are validation errors, throw an error with all issues
+    if (validationErrors.length > 0) {
+        const errorMessage = formatValidationErrors(validationErrors);
+        throw new Error(errorMessage);
+    }
+}
+
+function formatValidationErrors(errors) {
+    const header = `❌ TSV Validation Failed (${errors.length} issue${errors.length > 1 ? 's' : ''} found)`;
+    const separator = '\n' + '─'.repeat(50) + '\n';
+    
+    const formattedErrors = errors.map((error, i) => {
+        let suggestion = '';
+        
+        // Add helpful suggestions based on error type
+        if (error.includes('Duplicate course number')) {
+            suggestion = '\n   💡 Suggestion: Each course must have a unique course number. Please rename one of the duplicate courses.';
+        } else if (error.includes('not found in the course list')) {
+            suggestion = '\n   💡 Suggestion: Make sure the course name matches exactly (including spaces and capitalization) with a course listed in the Course Number column.';
+        } else if (error.includes('Asymmetric corequisite')) {
+            suggestion = '\n   💡 Suggestion: If Course A lists Course B as a corequisite, then Course B must also list Course A as a corequisite.';
+        } else if (error.includes('lists itself as')) {
+            suggestion = '\n   💡 Suggestion: A course cannot be its own prerequisite or corequisite. Please remove the self-reference.';
+        } else if (error.includes('Circular prerequisite')) {
+            suggestion = '\n   💡 Suggestion: Course A cannot be a prerequisite of Course B if Course B is a prerequisite of Course A.';
+        } else if (error.includes('Empty course number')) {
+            suggestion = '\n   💡 Suggestion: Every row must have a course number in the Course Number column.';
+        }
+        
+        return `${i + 1}. ${error}${suggestion}`;
+    });
+    
+    const footer = '\n\n📋 Please fix these issues in your spreadsheet and try loading the data again.';
+    
+    return header + separator + formattedErrors.join('\n\n') + footer;
 }
 
 function parseTSV(tsvText) {
@@ -204,7 +338,10 @@ function determineCategory(requiredOrOptional) {
 
 function showError(message) {
     const errorMessage = document.getElementById('errorMessage');
-    errorMessage.textContent = message;
+    
+    // Convert newlines to HTML line breaks for better display
+    const formattedMessage = message.replace(/\n/g, '<br>');
+    errorMessage.innerHTML = formattedMessage;
     errorMessage.style.display = 'block';
 }
 
@@ -364,6 +501,7 @@ function createClassCard(classData) {
     }
     
     const prereqsText = classData.prerequisites.join(', ') || 'None';
+    const coreqsText = classData.corequisites.join(', ') || 'None';
     
     // Create structured tooltip content
     let tooltipContent = `
@@ -371,6 +509,10 @@ function createClassCard(classData) {
         <div class="course-prereqs">
             <span class="prereq-label">Prerequisites:</span>
             <span class="prereq-list">${prereqsText}</span>
+        </div>
+        <div class="course-coreqs">
+            <span class="coreq-label">Corequisites:</span>
+            <span class="coreq-list">${coreqsText}</span>
         </div>
     `;
     
@@ -510,20 +652,41 @@ function validateAllPrerequisites() {
     academicQuartersSorted.forEach(quarter => {
         quarter.classes.forEach(classId => {
             const classData = findClassById(classId);
-            if (!classData || classData.prerequisites.length === 0) {
-                return; 
+            if (!classData) return;
+
+            let isInvalid = false;
+
+            // Check prerequisites
+            if (classData.prerequisites.length > 0) {
+                let prereqsMet = true;
+                for (const prereqId of classData.prerequisites) {
+                    if (!completedClassesCumulative.has(prereqId)) {
+                        prereqsMet = false;
+                        break;
+                    }
+                }
+                if (!prereqsMet) {
+                    isInvalid = true;
+                }
             }
 
-            let prereqsMet = true;
-            for (const prereqId of classData.prerequisites) {
-                if (!completedClassesCumulative.has(prereqId)) {
-                    prereqsMet = false;
-                    break;
+            // Check corequisites
+            if (classData.corequisites.length > 0) {
+                let coreqsMet = true;
+                for (const coreqId of classData.corequisites) {
+                    // Corequisite must be in the same quarter
+                    if (!quarter.classes.includes(coreqId)) {
+                        coreqsMet = false;
+                        break;
+                    }
+                }
+                if (!coreqsMet) {
+                    isInvalid = true;
                 }
             }
 
             const cardElement = document.getElementById(`class-${classId.replace(/\s+/g, '-')}`);
-            if (cardElement && !prereqsMet) {
+            if (cardElement && isInvalid) {
                 cardElement.classList.add('invalid');
             }
         });
@@ -619,6 +782,7 @@ function initializePlanningGraph() {
         graph[course.id] = {
             course,
             prerequisites: course.prerequisites,
+            corequisites: course.corequisites,
             dependents: [],
             placed: false,
             unassignedReason: '',
@@ -727,10 +891,32 @@ function primaryCoursePlacement(quarter, completedCourses, coursesInQuarter, gra
         let coursePlacedThisIteration = false;
         for (const courseNode of availableCourseNodes) {
             const course = courseNode.course;
-            if (canPlaceCourseInQuarterForPlanning(course, quarter)) {
-                addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
-                coursePlacedThisIteration = true;
-                break;
+            
+            // Check if this course has corequisites
+            if (courseNode.corequisites.length > 0) {
+                const coreqGroup = getCorequisiteGroup(course.id, graph);
+                
+                // Check if all corequisites in the group are available for placement
+                const allCoreqsAvailable = coreqGroup.every(coreqId => {
+                    const coreqNode = graph[coreqId];
+                    if (!coreqNode || coreqNode.placed) return false;
+                    
+                    // Check if prerequisites are satisfied for each corequisite
+                    return checkPrerequisitesSatisfied(coreqNode, completedCourses, graph);
+                });
+                
+                if (allCoreqsAvailable && canPlaceCorequisiteGroup(coreqGroup, quarter, graph)) {
+                    placeCorequisiteGroup(coreqGroup, quarter, graph, coursesInQuarter);
+                    coursePlacedThisIteration = true;
+                    break;
+                }
+            } else {
+                // Regular single course placement
+                if (canPlaceCourseInQuarterForPlanning(course, quarter)) {
+                    addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
+                    coursePlacedThisIteration = true;
+                    break;
+                }
             }
         }
         if (!coursePlacedThisIteration) break;
@@ -810,6 +996,15 @@ function findBestQuarterForCourse(courseNode, academicQuarters, graph) {
     let bestQuarter = null;
     let bestScore = -Infinity;
 
+    // Get summer courses to include as completed prerequisites
+    const summerQuarters = quartersData.filter(q => 
+        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    );
+    const summerCourses = new Set();
+    summerQuarters.forEach(summerQuarter => {
+        summerQuarter.classes.forEach(courseId => summerCourses.add(courseId));
+    });
+
     for (let qIdx = 0; qIdx < academicQuarters.length; qIdx++) {
         const potentialQuarter = academicQuarters[qIdx];
 
@@ -818,6 +1013,11 @@ function findBestQuarterForCourse(courseNode, academicQuarters, graph) {
         }
 
         const coursesCompletedBeforePotentialQuarter = new Set();
+        
+        // Include summer courses as completed
+        summerCourses.forEach(courseId => coursesCompletedBeforePotentialQuarter.add(courseId));
+        
+        // Include courses from previous academic quarters
         for (let prevQIdx = 0; prevQIdx < qIdx; prevQIdx++) {
             academicQuarters[prevQIdx].classes.forEach(cId => coursesCompletedBeforePotentialQuarter.add(cId));
         }
@@ -864,6 +1064,16 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
         
         // Check if prereq is optional AND not taken yet
         let tempCompleted = new Set();
+        
+        // Include summer courses as completed
+        const summerQuarters = quartersData.filter(q => 
+            q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+        );
+        summerQuarters.forEach(summerQuarter => {
+            summerQuarter.classes.forEach(courseId => tempCompleted.add(courseId));
+        });
+        
+        // Include academic quarter courses
         academicQuarters.forEach(q => q.classes.forEach(c => tempCompleted.add(c)));
         
         if (prereqCourseData && prereqCourseData.category === "Optional" && !tempCompleted.has(prereqId)) {
@@ -882,6 +1092,15 @@ function fallbackCoursePlacement(graph, academicQuarters) {
     let fallbackIterations = 0;
     const MAX_FALLBACK_ITERATIONS = unplacedCourseNodes.length + academicQuarters.length + 5;
 
+    // Get summer courses to include as completed prerequisites
+    const summerQuarters = quartersData.filter(q => 
+        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    );
+    const summerCourses = new Set();
+    summerQuarters.forEach(summerQuarter => {
+        summerQuarter.classes.forEach(courseId => summerCourses.add(courseId));
+    });
+
     while (unplacedCourseNodes.length > 0 && fallbackIterations < MAX_FALLBACK_ITERATIONS) {
         let courseWasPlacedInFallbackPass = false;
         unplacedCourseNodes = sortUnplacedCourses(unplacedCourseNodes, graph);
@@ -889,15 +1108,84 @@ function fallbackCoursePlacement(graph, academicQuarters) {
         for (const courseNode of unplacedCourseNodes) {
             if (courseNode.placed) continue;
 
-            const bestQuarter = findBestQuarterForCourse(courseNode, academicQuarters, graph);
-            if (bestQuarter) {
-                const course = courseNode.course;
-                bestQuarter.classes.push(course.id);
-                courseNode.placed = true;
-                bestQuarter.units += course.units;
-                bestQuarter.difficulty += (course.difficulty || 1);
-                courseWasPlacedInFallbackPass = true;
-                break;
+            // Check if this course has corequisites
+            if (courseNode.corequisites.length > 0) {
+                const coreqGroup = getCorequisiteGroup(courseNode.course.id, graph);
+                
+                // Check if all corequisites in the group are unplaced
+                const allCoreqsUnplaced = coreqGroup.every(coreqId => {
+                    const coreqNode = graph[coreqId];
+                    return coreqNode && !coreqNode.placed;
+                });
+                
+                if (allCoreqsUnplaced) {
+                    // Find best quarter for the entire corequisite group
+                    let bestQuarter = null;
+                    let bestScore = -Infinity;
+                    
+                    for (let qIdx = 0; qIdx < academicQuarters.length; qIdx++) {
+                        const potentialQuarter = academicQuarters[qIdx];
+                        
+                        if (!canPlaceCorequisiteGroup(coreqGroup, potentialQuarter, graph)) {
+                            continue;
+                        }
+                        
+                        const coursesCompletedBeforePotentialQuarter = new Set();
+                        
+                        // Include summer courses as completed
+                        summerCourses.forEach(courseId => coursesCompletedBeforePotentialQuarter.add(courseId));
+                        
+                        // Include courses from previous academic quarters
+                        for (let prevQIdx = 0; prevQIdx < qIdx; prevQIdx++) {
+                            academicQuarters[prevQIdx].classes.forEach(cId => coursesCompletedBeforePotentialQuarter.add(cId));
+                        }
+                        
+                        // Check if all courses in the group have their prerequisites satisfied
+                        const allPrereqsSatisfied = coreqGroup.every(coreqId => {
+                            const coreqNode = graph[coreqId];
+                            return checkPrerequisitesSatisfied(coreqNode, coursesCompletedBeforePotentialQuarter, graph);
+                        });
+                        
+                        if (allPrereqsSatisfied) {
+                            // Calculate average score for the group
+                            let groupScore = 0;
+                            coreqGroup.forEach(coreqId => {
+                                groupScore += calculateQuarterScore(potentialQuarter, graph[coreqId].course, qIdx);
+                            });
+                            groupScore /= coreqGroup.length;
+                            
+                            if (groupScore > bestScore) {
+                                bestScore = groupScore;
+                                bestQuarter = potentialQuarter;
+                            }
+                        }
+                    }
+                    
+                    if (bestQuarter) {
+                        // Place the entire corequisite group
+                        coreqGroup.forEach(coreqId => {
+                            const course = graph[coreqId].course;
+                            bestQuarter.classes.push(course.id);
+                            graph[coreqId].placed = true;
+                            bestQuarter.units += course.units;
+                            bestQuarter.difficulty += (course.difficulty || 1);
+                        });
+                        courseWasPlacedInFallbackPass = true;
+                        break;
+                    }
+                }
+            } else {
+                // Regular single course fallback placement
+                const bestQuarter = findBestQuarterForCourse(courseNode, academicQuarters, graph);
+                if (bestQuarter) {
+                    const course = courseNode.course;
+                    bestQuarter.classes.push(course.id);
+                    courseNode.placed = true;
+                    bestQuarter.units += course.units;
+                    bestQuarter.difficulty += (course.difficulty || 1);
+                    courseWasPlacedInFallbackPass = true;
+                    break;
+                }
             }
         }
 
@@ -948,7 +1236,23 @@ function autoPlanCoreCourses() {
     graph = initializePlanningGraph();
     const academicQuarters = getAcademicQuartersForPlanning();
 
+    // Initialize completed courses with courses pinned in summer quarters
     let completedCourses = new Set();
+    
+    // Add courses from summer quarters as completed prerequisites
+    const summerQuarters = quartersData.filter(q => 
+        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    );
+    
+    summerQuarters.forEach(summerQuarter => {
+        summerQuarter.classes.forEach(courseId => {
+            completedCourses.add(courseId);
+            // Mark summer courses as placed in the graph so they won't be auto-planned
+            if (graph[courseId]) {
+                graph[courseId].placed = true;
+            }
+        });
+    });
     
     // Main planning loop for each quarter
     for (const quarter of academicQuarters) {
@@ -1002,7 +1306,7 @@ function downloadPlan() {
     }
 
     // Create TSV content in the same format as input
-    let tsvContent = "Taken\tCourse Number\tPrerequisites\tDescription\tUnits\tRequired or Optional\tDifficulty\n";
+    let tsvContent = "Taken\tCourse Number\tPrerequisites\tCorequisites\tDescription\tUnits\tRequired or Optional\tDifficulty\n";
     
     // Process all courses in their original order
     ALL_CLASSES_DATA.forEach(courseData => {
@@ -1018,6 +1322,9 @@ function downloadPlan() {
         // Format prerequisites
         const prerequisites = courseData.prerequisites.length > 0 ? courseData.prerequisites.join(', ') : 'None';
         
+        // Format corequisites
+        const corequisites = courseData.corequisites.length > 0 ? courseData.corequisites.join(', ') : 'None';
+        
         // Escape tabs and newlines in description
         const description = (courseData.description || '').replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
         
@@ -1025,7 +1332,7 @@ function downloadPlan() {
         const requiredOrOptional = formatCategoryForExport(courseData.category);
         
         // Add row to TSV
-        tsvContent += `${takenValue}\t${courseData.name}\t${prerequisites}\t${description}\t${courseData.units}\t${requiredOrOptional}\t${courseData.difficulty}\n`;
+        tsvContent += `${takenValue}\t${courseData.name}\t${prerequisites}\t${corequisites}\t${description}\t${courseData.units}\t${requiredOrOptional}\t${courseData.difficulty}\n`;
     });
     
     // Create and download the file
@@ -1446,6 +1753,59 @@ function loadSavedSettings() {
     }
 }
 
+// New corequisite handling functions
+function getCorequisiteGroup(courseId, graph) {
+    const visited = new Set();
+    const group = new Set();
+    
+    function collectCorequisites(currentId) {
+        if (visited.has(currentId) || !graph[currentId]) return;
+        
+        visited.add(currentId);
+        group.add(currentId);
+        
+        // Add all corequisites of the current course
+        graph[currentId].corequisites.forEach(coreqId => {
+            if (graph[coreqId] && !visited.has(coreqId)) {
+                collectCorequisites(coreqId);
+            }
+        });
+        
+        // Also check if any other courses have this course as a corequisite
+        Object.values(graph).forEach(node => {
+            if (!visited.has(node.course.id) && node.corequisites.includes(currentId)) {
+                collectCorequisites(node.course.id);
+            }
+        });
+    }
+    
+    collectCorequisites(courseId);
+    return Array.from(group);
+}
+
+function canPlaceCorequisiteGroup(courseIds, quarter, graph) {
+    let totalUnits = 0;
+    let totalDifficulty = 0;
+    
+    courseIds.forEach(courseId => {
+        const course = graph[courseId].course;
+        totalUnits += course.units;
+        totalDifficulty += (course.difficulty || 1);
+    });
+    
+    return (quarter.units + totalUnits <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER) &&
+           (quarter.difficulty + totalDifficulty <= PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER);
+}
+
+function placeCorequisiteGroup(courseIds, quarter, graph, coursesInQuarter) {
+    courseIds.forEach(courseId => {
+        if (!graph[courseId].placed) {
+            const course = graph[courseId].course;
+            addCourseToQuarter(course, quarter, graph[courseId], coursesInQuarter);
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
@@ -1458,4 +1818,4 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeQuarters(4); 
         renderPlanner();
     }
-}); 
+});
