@@ -66,11 +66,16 @@ async function loadCourseData() {
             units: parseInt(row['Units']) || 0, 
             difficulty: parseInt(row['Difficulty']) || 1, 
             category: determineCategory(row['Required or Optional']),
+            taken: row['Taken'] ? row['Taken'].trim() : '',
             originalOrder: index 
         }));
 
         // Initialize fresh quarters with no pinned courses
         initializeQuarters(4);
+        
+        // Process courses with "Taken" assignments
+        processTakenCourses();
+        
         renderPlanner();
         document.body.classList.remove('loading');
     } catch (error) {
@@ -936,6 +941,75 @@ function downloadPlan() {
     } else {
         alert('Download not supported in this browser. Please try a different browser.');
     }
+}
+
+function processTakenCourses() {
+    console.log('Processing taken courses...');
+    console.log('ALL_CLASSES_DATA:', ALL_CLASSES_DATA);
+    
+    ALL_CLASSES_DATA.forEach(courseData => {
+        console.log(`Course ${courseData.id}: taken = "${courseData.taken}"`);
+        
+        if (courseData.taken && courseData.taken !== '') {
+            const quarterId = parseQuarterFromTaken(courseData.taken);
+            console.log(`Parsed quarter ID for ${courseData.id}: ${quarterId}`);
+            
+            if (quarterId) {
+                // Remove from unassigned
+                const unassignedQuarter = getQuarterById('unassigned');
+                if (unassignedQuarter) {
+                    unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== courseData.id);
+                }
+                
+                // Add to target quarter and pin it
+                const targetQuarter = getQuarterById(quarterId);
+                console.log(`Target quarter for ${courseData.id}:`, targetQuarter);
+                
+                if (targetQuarter) {
+                    targetQuarter.classes.push(courseData.id);
+                    targetQuarter.pinnedClasses.push(courseData.id);
+                    pinnedCourses.add(courseData.id);
+                    
+                    // Update quarter stats
+                    targetQuarter.units += courseData.units;
+                    targetQuarter.difficulty += (courseData.difficulty || 1);
+                    
+                    console.log(`Successfully placed ${courseData.id} in ${quarterId}`);
+                } else {
+                    console.log(`Could not find quarter ${quarterId} for course ${courseData.id}`);
+                }
+            } else {
+                console.log(`Could not parse quarter from "${courseData.taken}" for course ${courseData.id}`);
+            }
+        }
+    });
+}
+
+function parseQuarterFromTaken(takenValue) {
+    console.log(`Parsing taken value: "${takenValue}"`);
+    
+    // Parse format like "Fall, Year 1" or "Winter, Year 2"
+    const match = takenValue.match(/^(Fall|Winter|Spring|Summer),?\s*Year\s*(\d+)$/i);
+    if (match) {
+        const season = match[1].toLowerCase();
+        const year = parseInt(match[2]);
+        const result = `${season}${year}`;
+        console.log(`Matched format 1: ${result}`);
+        return result;
+    }
+    
+    // Also try format like "Fall Year 1" (without comma)
+    const match2 = takenValue.match(/^(Fall|Winter|Spring|Summer)\s+Year\s*(\d+)$/i);
+    if (match2) {
+        const season = match2[1].toLowerCase();
+        const year = parseInt(match2[2]);
+        const result = `${season}${year}`;
+        console.log(`Matched format 2: ${result}`);
+        return result;
+    }
+    
+    console.log(`No match found for: "${takenValue}"`);
+    return null; // Invalid format
 }
 
 function pinCourse(classId, quarterId) {
