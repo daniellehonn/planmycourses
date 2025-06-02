@@ -1704,7 +1704,7 @@ function loadCurrentSettings() {
     
     // Update dynamic values display
     const calculated = calculateDynamicSettings();
-    updateDynamicDisplays(calculated);
+    // updateDynamicDisplays(calculated); // Removed - UI elements no longer exist
 }
 
 function saveSettings() {
@@ -2088,8 +2088,8 @@ function updateDynamicSettings() {
         dynamicSettings.customQuarters : 
         dynamicSettings.quartersToGraduate;
     
-    // If timeline changed and we have course data, reinitialize quarters
-    if (newQuarters !== previousQuarters && ALL_CLASSES_DATA.length > 0) {
+    // If timeline changed, reinitialize quarters
+    if (newQuarters !== previousQuarters) {
         initializeQuarters();
         renderPlanner();
     }
@@ -2115,55 +2115,10 @@ function updateDynamicSettings() {
     }
     
     // Update UI displays
-    updateDynamicDisplays(calculated);
+    // updateDynamicDisplays(calculated); // Removed - UI elements no longer exist
     
     // Save settings
     saveDynamicSettings();
-}
-
-function updateDynamicDisplays(calculated) {
-    // Update main UI
-    document.getElementById('recommendedUnits').textContent = 
-        `${calculated.minUnits}-${calculated.maxUnits}`;
-    document.getElementById('academicTerms').textContent = calculated.academicQuarters;
-    
-    // Update average units per term
-    const averageUnitsElement = document.getElementById('averageUnits');
-    if (averageUnitsElement) {
-        averageUnitsElement.textContent = calculated.unitsPerTerm;
-    }
-    
-    // Update total units display to show calculated value
-    const totalUnitsInput = document.getElementById('totalUnitsNeeded');
-    if (totalUnitsInput) {
-        totalUnitsInput.value = calculated.actualTotalUnits;
-        // Make it read-only since it's now calculated
-        totalUnitsInput.readOnly = true;
-        totalUnitsInput.style.backgroundColor = '#f8fafc';
-        totalUnitsInput.style.color = '#64748b';
-    }
-    
-    // Update course count display
-    const courseCountInput = document.getElementById('courseCount');
-    if (courseCountInput) {
-        courseCountInput.value = calculated.courseCount;
-        courseCountInput.readOnly = true;
-        courseCountInput.style.backgroundColor = '#f8fafc';
-        courseCountInput.style.color = '#64748b';
-    }
-    
-    // Update advanced settings modal if open
-    const currentMinUnits = document.getElementById('currentMinUnits');
-    const currentMaxUnits = document.getElementById('currentMaxUnits');
-    const currentTargetUnits = document.getElementById('currentTargetUnits');
-    const currentMaxDifficulty = document.getElementById('currentMaxDifficulty');
-    const currentTargetDifficulty = document.getElementById('currentTargetDifficulty');
-    
-    if (currentMinUnits) currentMinUnits.textContent = calculated.minUnits;
-    if (currentMaxUnits) currentMaxUnits.textContent = calculated.maxUnits;
-    if (currentTargetUnits) currentTargetUnits.textContent = calculated.targetUnits;
-    if (currentMaxDifficulty) currentMaxDifficulty.textContent = calculated.maxDifficulty;
-    if (currentTargetDifficulty) currentTargetDifficulty.textContent = calculated.targetDifficulty;
 }
 
 function updateAcademicSystem() {
@@ -2195,11 +2150,9 @@ function updateAcademicSystem() {
         document.getElementById('customQuarters').style.display = 'inline-block';
     }
     
-    // Update quarters if data is loaded - use dynamic calculation
-    if (ALL_CLASSES_DATA.length > 0) {
-        initializeQuarters();
-        renderPlanner();
-    }
+    // Update quarters - use dynamic calculation
+    initializeQuarters();
+    renderPlanner();
     
     // Recalculate dynamic settings
     updateDynamicSettings();
@@ -2296,36 +2249,9 @@ function finalCleanupPlacement(graph, academicQuarters) {
     }
 }
 
-// Toggle main settings section
-function toggleMainSettings() {
-    const container = document.getElementById('mainSettingsContainer');
-    const icon = document.getElementById('mainSettingsIcon');
-    
-    container.classList.toggle('collapsed');
-    icon.classList.toggle('collapsed');
-    
-    // Save state to localStorage
-    const isCollapsed = container.classList.contains('collapsed');
-    localStorage.setItem('mainSettingsCollapsed', isCollapsed);
-}
-
-// Initialize main settings collapse state
-function initializeMainSettingsState() {
-    const isCollapsed = localStorage.getItem('mainSettingsCollapsed') === 'true';
-    if (isCollapsed) {
-        const container = document.getElementById('mainSettingsContainer');
-        const icon = document.getElementById('mainSettingsIcon');
-        container.classList.add('collapsed');
-        icon.classList.add('collapsed');
-    }
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
-    
-    // Initialize main settings collapse state
-    initializeMainSettingsState();
     
     setupDragAndDrop();
     
@@ -2336,3 +2262,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPlanner();
     }
 });
+
+function openPlannerTemplate() {
+    // Open the planner template in a new tab
+    const templateUrl = 'https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing'; // Replace with actual template URL
+    window.open(templateUrl, '_blank', 'noopener,noreferrer');
+}

@@ -18,8 +18,12 @@
             <div class="instructions-step">
                 <h2>Step 1: Access the Template</h4>
                 <ol>
-                    <li>Open the Google Sheets template: <a href="https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing" target="_blank">Course Planner Template</a></li>
-                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;">If you would love to help and contribute a template for your specific major at your specific school, please share your sheet or reach out to me at <a href="mailto:daniellehonnn@gmail.com">daniellehonnn@gmail.com</a>!</p>
+                    <li>
+                        <button onclick="openPlannerTemplate()" class="template-button-small">
+                            <span class="button-icon">📋</span>
+                            Open Course Planner Template
+                        </button>
+                    </li>
                     <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own editable version</li>
                     <img src="./img/makeacopy.png" alt="Screenshot showing how to make a copy of the template" style="max-width: 40%; margin: 10px 0; border: 1px solid #ccc;">
                 </ol>
@@ -109,62 +113,40 @@
             </div>
         </div>
 
-        <!-- Main Settings Section -->
-        <div class="main-settings-section">
-            <div class="settings-section-header" onclick="toggleMainSettings()">
-                <h3>📊 Planning Settings</h3>
-                <span class="collapse-icon" id="mainSettingsIcon">▼</span>
+        <!-- Quick Settings -->
+        <div class="quick-settings">
+            <div class="setting-group">
+                <label for="quartersToGraduate" id="graduationTimelineLabel">Quarters to Graduate:</label>
+                <select id="quartersToGraduate" onchange="updateDynamicSettings()">
+                    <option value="8">2 Years (8 quarters)</option>
+                    <option value="12" selected>3 Years (12 quarters)</option>
+                    <option value="16">4 Years (16 quarters)</option>
+                    <option value="20">5 Years (20 quarters)</option>
+                    <option value="custom">Custom</option>
+                </select>
+                <input type="number" id="customQuarters" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter quarters">
             </div>
-            <div class="main-settings-container" id="mainSettingsContainer">
-                <div class="setting-group">
-                    <label for="quartersToGraduate" id="graduationTimelineLabel">Quarters to Graduate:</label>
-                    <select id="quartersToGraduate" onchange="updateDynamicSettings()">
-                        <option value="8">2 Years (8 quarters)</option>
-                        <option value="12" selected>3 Years (12 quarters)</option>
-                        <option value="16">4 Years (16 quarters)</option>
-                        <option value="20">5 Years (20 quarters)</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                    <input type="number" id="customQuarters" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter quarters">
-                </div>
-                
-                <div class="setting-group">
-                    <label for="totalUnitsNeeded">Total Units (Calculated):</label>
-                    <input type="number" id="totalUnitsNeeded" min="120" max="300" value="180" readonly>
-                </div>
-                
-                <div class="setting-group">
-                    <label for="courseCount">Total Courses:</label>
-                    <input type="number" id="courseCount" value="0" readonly>
-                </div>
-                
-                <div class="setting-group">
-                    <label for="academicSystem">Academic System:</label>
-                    <select id="academicSystemMain" onchange="updateAcademicSystem()">
-                        <option value="quarter">Quarter System</option>
-                        <option value="semester">Semester System</option>
-                    </select>
-                </div>
-                
-                <div class="dynamic-info">
-                    <div class="info-item">
-                        <span class="info-label">Recommended Units per Term:</span>
-                        <span id="recommendedUnits" class="info-value">12-16</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Academic Terms:</span>
-                        <span id="academicTerms" class="info-value">12</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">Average Units per Term:</span>
-                        <span id="averageUnits" class="info-value">15.0</span>
-                    </div>
-                </div>
+            
+            <div class="setting-group">
+                <label for="academicSystem">Academic System:</label>
+                <select id="academicSystemMain" onchange="updateAcademicSystem()">
+                    <option value="quarter">Quarter System</option>
+                    <option value="semester">Semester System</option>
+                </select>
             </div>
         </div>
 
         <div class="url-input-container">
             <h2>Load Course Data</h2>
+            
+            <!-- Template Access Button -->
+            <div class="template-access">
+                <button onclick="openPlannerTemplate()" class="template-button">
+                    <span class="button-icon">📋</span>
+                    Access Planner Template
+                </button>
+                <p class="template-description">Get started quickly with our pre-made Google Sheets template</p>
+            </div>
             
             <div class="data-input-tabs">
                 <button class="tab-button active" onclick="switchTab('url')" id="urlTab">
@@ -223,9 +205,14 @@
             <div class="years-header">
                 <h2>Academic Plan</h2>
                 <div class="action-buttons">
-                    <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Core</button>
+                    <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
                     <button id="downloadButton" onclick="downloadPlan()">📥 Download Plan</button>
                 </div>
+            </div>
+            <div class="plan-features">
+                <p><strong>💡 Quick Tips:</strong> 
+                Drag & drop classes • Auto-plan on demand • Pin classes (📌) to specific quarters • Lock quarters (🔒) to preserve completed terms • Export your plan (📥)
+                </p>
             </div>
             <div id="years">
                 <!-- Years and Quarters will be populated here -->
