@@ -42,23 +42,23 @@
                             <li>Otherwise, use format like: <code>"Fall, Year 1"</code></li>
                         </ul>
                     </li>
-                    <li><strong>Prerequisites:</strong>
+                    <li><strong>Prerequisites (courses that must be taken before this one):</strong>
                         <ul>
-                            <li>Write <code>None</code> or list course numbers separated by commas</li>
+                            <li>List course numbers separated by commas</li>
                             <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
                         </ul>
                     </li>
-                    <li><strong>Corequisites:</strong>
+                    <li><strong>Corequisites (courses that must be taken together):</strong>
                         <ul>
-                            <li>Write <code>None</code> or list course numbers separated by commas</li>
+                            <li>List course numbers separated by commas</li>
                             <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
-                            <li><strong>📅</strong>: Corequisite courses will be automatically placed in the same quarter</li>
                         </ul>
                     </li>
                     <li><strong>Units</strong>: How many units the course is worth</li>
-                    <li><strong>Difficulty</strong> (1 = easiest, 8 = hardest)
+                    <li><strong>Difficulty (optional):</strong>
                         <ul>
-                            <li>Skip this if unsure — defaults to 1</li>
+                            <li>1 = easiest, 8 = hardest</li>
+                            <li>If you're unsure, make them all 1</li>
                         </ul>
                     </li>
 
@@ -73,10 +73,12 @@
                 <ol>
                     <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish to web</strong></li>
                     <img src="./img/publishtoweb.png" alt="Screenshot showing how to publish your Google Sheet" style="max-width: 60%; margin: 10px 0; border: 1px solid #ccc;">
+                    <li>In the dropdown menu, change from <strong>"Entire Document"</strong> to <strong>"TEMPLATE"</strong></li>
+                    <img src="./img/publishtemplate.png" alt="Screenshot showing how to change the format to HTML" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
                     <li>In the dropdown menu, change from <strong>"Web page"</strong> to <strong>"Tab-separated values"</strong></li>
                     <img src="./img/publishastsv.png" alt="Screenshot showing how to change the format to TSV" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
                     <li>Click <strong>Publish</strong> and copy the generated link</li>
-                    <img src="./img/linktocopy.png" alt="Screenshot showing how to copy the link" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
+                    <img src="./img/publishedlink.png" alt="Screenshot showing how to copy the link" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
                 </ol>
             </div>
             
@@ -87,7 +89,6 @@
                 </ol>
                 <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</p>
             </div>
-            <p>You can mess around with some of the settings to get your desired results (eg. increase the max units per quarter, etc.)</p>
             <h2><em>🎉 Congrats! Your course planner is now ready to go!</em></h2>
 
         </div>
@@ -100,98 +101,93 @@
         <div class="header-section">
             <h1>Interactive Class Planner</h1>
             <div class="header-buttons">
-                <button class="settings-button" onclick="toggleSettingsModal()" title="Advanced Settings">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="3"></circle>
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                    </svg>
-                    Advanced
-                </button>
                 <button class="help-button" onclick="toggleSidebar()" title="Show setup instructions">
                     📋 Setup Guide
                 </button>
             </div>
         </div>
 
-        <!-- Quick Settings -->
-        <div class="quick-settings">
-            <div class="setting-group">
-                <label for="quartersToGraduate" id="graduationTimelineLabel">Quarters to Graduate:</label>
-                <select id="quartersToGraduate" onchange="updateDynamicSettings()">
-                    <option value="8">2 Years (8 quarters)</option>
-                    <option value="12" selected>3 Years (12 quarters)</option>
-                    <option value="16">4 Years (16 quarters)</option>
-                    <option value="20">5 Years (20 quarters)</option>
-                    <option value="custom">Custom</option>
-                </select>
-                <input type="number" id="customQuarters" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter quarters">
+        <!-- Input and Video Container -->
+        <div class="input-video-container">
+            <!-- Consolidated Input Module -->
+            <div class="input-module">
+                <div class="input-header">
+                    <h2 class="input-title">Input:</h2>
             </div>
             
-            <div class="setting-group">
-                <label for="academicSystem">Academic System:</label>
-                <select id="academicSystemMain" onchange="updateAcademicSystem()">
-                    <option value="quarter">Quarter System</option>
-                    <option value="semester">Semester System</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="url-input-container">
-            <h2>Load Course Data</h2>
-            
-            <!-- Template Access Button -->
-            <div class="template-access">
-                <button onclick="openPlannerTemplate()" class="template-button">
-                    <span class="button-icon">📋</span>
-                    Access Planner Template
+                <div class="template-tooltip">
+                    <span class="template-tooltip-text">Click here to access the template 👉🏻 
+                        <button onclick="openPlannerTemplate()" class="template-tooltip-button">
+                            📋 Access Planner Template
                 </button>
-                <p class="template-description">Get started quickly with our pre-made Google Sheets template</p>
+                    </span>
             </div>
             
-            <div class="data-input-tabs">
-                <button class="tab-button active" onclick="switchTab('url')" id="urlTab">
-                    🌐 From URL
-                </button>
-                <button class="tab-button" onclick="switchTab('file')" id="fileTab">
-                    📁 From File
-                </button>
+                <div class="input-url-section">
+                    <div class="upload-icon-button" title="Upload TSV file">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7,10 12,15 17,10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <input type="file" id="quickFileInput" accept=".tsv,.txt" onchange="handleQuickFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
             </div>
-            
-            <div class="tab-content">
-                <div id="urlTabContent" class="tab-panel active">
-                    <p class="tab-description">Load course data from a Google Sheets TSV link (Please follow the <a href="#" onclick="toggleSidebar()">Setup Guide</a> to get the link)</p>
-                    <div class="input-group">
-                        <input type="text" id="dataUrl" placeholder="Paste your TSV URL here..." value="">
-                        <button onclick="loadCourseData()" class="primary-button">
+                    <span id="fileNameDisplay" class="file-name-display" style="display: none;"></span>
+                    <input type="text" id="dataUrlNew" placeholder="paste url here or upload file" value="">
+                    <button onclick="loadCourseData()" class="load-data-button">
                             <span class="button-icon">🚀</span>
                             Load Data
                         </button>
-                    </div>
                 </div>
-                <div id="fileTabContent" class="tab-panel">
-                    <p class="tab-description">Upload a TSV file from your computer</p>
-                    <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('fileInput').click()">
-                        <div class="upload-icon">📄</div>
-                        <div class="upload-text">
-                            <strong>Click to select a TSV file</strong>
-                            <span>or drag and drop here</span>
+                
+                <div class="input-settings-bottom">
+                    <div class="setting-group">
+                        <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Semesters to Graduate:</label>
+                        <select id="quartersToGraduateNew" onchange="updateDynamicSettings()">
+                            <option value="4">2 Years (4 Semesters)</option>
+                            <option value="6">3 Years (6 Semesters)</option>
+                            <option value="8" selected>4 Years (8 Semesters)</option>
+                            <option value="10">5 Years (10 Semesters)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <input type="number" id="customQuartersNew" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter semesters">
                         </div>
-                        <input type="file" id="fileInput" accept=".tsv,.txt" onchange="handleFileSelect(event)" style="display: none;">
+                    
+                    <div class="setting-group">
+                        <label for="academicSystemNew">Academic System:</label>
+                        <select id="academicSystemNew" onchange="updateAcademicSystem()">
+                            <option value="quarter">Quarter System</option>
+                            <option value="semester" selected>Semester System</option>
+                        </select>
                     </div>
-                    <div class="file-info" id="fileInfo" style="display: none;">
-                        <span class="file-name" id="fileName"></span>
-                        <button onclick="loadCourseDataFromFile()" class="primary-button" id="loadFileButton" disabled>
-                            <span class="button-icon">📤</span>
-                            Load File
+                    
+                    <div class="settings-button-container">
+                        <button class="settings-button" onclick="toggleSettingsModal()" title="Advanced Settings">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                            Advanced
                         </button>
                     </div>
-                    <div class="format-requirements">
-                        <strong>Required columns:</strong> Taken, Course Number, Prerequisites, Corequisites, Description, Units, Difficulty
+                </div>
+                
+                <div id="errorMessage" class="error-message"></div>
                     </div>
+
+            <!-- YouTube Video -->
+            <div class="video-section">
+                <div class="video-container">
+                    <iframe 
+                        src="https://www.youtube.com/embed/qUQWsvibaeo" 
+                        title="Class Planner Tutorial Video" 
+                        frameborder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                        referrerpolicy="strict-origin-when-cross-origin"
+                        allowfullscreen>
+                    </iframe>
                 </div>
             </div>
-            
-            <div id="errorMessage" class="error-message"></div>
         </div>
 
         <div class="unassigned-classes-container">

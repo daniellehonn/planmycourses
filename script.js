@@ -41,8 +41,13 @@ const PLANNING_CONFIG = {
     }
 };
 
+// Helper function to get element by new ID with fallback to old ID
+function getElementByIdWithFallback(newId, oldId) {
+    return document.getElementById(newId) || document.getElementById(oldId);
+}
+
 async function loadCourseData() {
-    const urlInput = document.getElementById('dataUrl');
+    const urlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
     const errorMessage = document.getElementById('errorMessage');
     const url = urlInput.value.trim();
 
@@ -54,6 +59,11 @@ async function loadCourseData() {
     try {
         document.body.classList.add('loading');
         errorMessage.style.display = 'none';
+
+        // Clear file uploaded state when loading from URL
+        const uploadButton = document.querySelector('.upload-icon-button');
+        if (uploadButton) uploadButton.classList.remove('file-uploaded');
+        updateFileNameDisplay(null);
 
         // Clear all pinned courses and do a hard reset
         pinnedCourses.clear();
@@ -349,6 +359,9 @@ function showError(message) {
 }
 
 function calculateRequiredYears() {
+    const graduationSelect = getElementByIdWithFallback('quartersToGraduateNew', 'quartersToGraduate');
+    const customInput = getElementByIdWithFallback('customQuartersNew', 'customQuarters');
+
     const quartersToGrad = dynamicSettings.useCustomQuarters ? 
         dynamicSettings.customQuarters : 
         dynamicSettings.quartersToGraduate;
@@ -1681,7 +1694,10 @@ function closeSettingsModal() {
 
 function loadCurrentSettings() {
     // Load academic system in main UI
-    document.getElementById('academicSystemMain').value = currentAcademicSystem;
+    const academicSystemSelect = getElementByIdWithFallback('academicSystemNew', 'academicSystemMain');
+    if (academicSystemSelect) {
+        academicSystemSelect.value = currentAcademicSystem;
+    }
     
     // Load advanced settings (show current values or empty for dynamic)
     const maxUnitsInput = document.getElementById('maxUnits');
@@ -1893,60 +1909,76 @@ function loadSavedSettings() {
 
 function initializeDynamicUI() {
     // Set main UI values
-    document.getElementById('academicSystemMain').value = currentAcademicSystem;
+    const academicSystemSelect = getElementByIdWithFallback('academicSystemNew', 'academicSystemMain');
+    if (academicSystemSelect) {
+        academicSystemSelect.value = currentAcademicSystem;
+    }
     
     // Update graduation timeline UI based on academic system
     updateAcademicSystemUI();
     
+    const quartersSelect = getElementByIdWithFallback('quartersToGraduateNew', 'quartersToGraduate');
+    const customInput = getElementByIdWithFallback('customQuartersNew', 'customQuarters');
+    
     if (dynamicSettings.useCustomQuarters) {
-        document.getElementById('quartersToGraduate').value = 'custom';
-        document.getElementById('customQuarters').value = dynamicSettings.customQuarters;
-        document.getElementById('customQuarters').style.display = 'inline-block';
+        if (quartersSelect) quartersSelect.value = 'custom';
+        if (customInput) {
+            customInput.value = dynamicSettings.customQuarters;
+            customInput.style.display = 'inline-block';
+        }
     } else {
-        document.getElementById('quartersToGraduate').value = dynamicSettings.quartersToGraduate;
-        document.getElementById('customQuarters').style.display = 'none';
+        if (quartersSelect) quartersSelect.value = dynamicSettings.quartersToGraduate;
+        if (customInput) customInput.style.display = 'none';
     }
     
     // Calculate and update displays (totalUnitsNeeded is now calculated from course data)
     updateDynamicSettings();
+    
+    // Always initialize quarters and render planner on initial load
+    initializeQuarters();
+    renderPlanner();
 }
 
 function updateAcademicSystemUI() {
     // Update graduation timeline label and options based on academic system
-    const graduationLabel = document.getElementById('graduationTimelineLabel');
-    const graduationSelect = document.getElementById('quartersToGraduate');
-    const customInput = document.getElementById('customQuarters');
+    const graduationLabel = getElementByIdWithFallback('graduationTimelineLabelNew', 'graduationTimelineLabel');
+    const graduationSelect = getElementByIdWithFallback('quartersToGraduateNew', 'quartersToGraduate');
+    const customInput = getElementByIdWithFallback('customQuartersNew', 'customQuarters');
     
     if (currentAcademicSystem === 'semester') {
         // Update label for semester system
-        graduationLabel.textContent = 'Semesters to Graduate:';
+        if (graduationLabel) graduationLabel.textContent = 'Semesters to Graduate:';
         
         // Update dropdown options for semesters
-        graduationSelect.innerHTML = `
-            <option value="4">2 Years (4 semesters)</option>
-            <option value="6" selected>3 Years (6 semesters)</option>
-            <option value="8">4 Years (8 semesters)</option>
-            <option value="10">5 Years (10 semesters)</option>
-            <option value="custom">Custom</option>
-        `;
+        if (graduationSelect) {
+            graduationSelect.innerHTML = `
+                <option value="4">2 Years (4 semesters)</option>
+                <option value="6">3 Years (6 semesters)</option>
+                <option value="8" selected>4 Years (8 semesters)</option>
+                <option value="10">5 Years (10 semesters)</option>
+                <option value="custom">Custom</option>
+            `;
+        }
         
         // Update placeholder for custom input
-        customInput.placeholder = 'Enter semesters';
+        if (customInput) customInput.placeholder = 'Enter semesters';
     } else {
         // Update label for quarter system
-        graduationLabel.textContent = 'Quarters to Graduate:';
+        if (graduationLabel) graduationLabel.textContent = 'Quarters to Graduate:';
         
         // Update dropdown options for quarters
-        graduationSelect.innerHTML = `
-            <option value="8">2 Years (8 quarters)</option>
-            <option value="12" selected>3 Years (12 quarters)</option>
-            <option value="16">4 Years (16 quarters)</option>
-            <option value="20">5 Years (20 quarters)</option>
-            <option value="custom">Custom</option>
-        `;
+        if (graduationSelect) {
+            graduationSelect.innerHTML = `
+                <option value="8">2 Years (8 quarters)</option>
+                <option value="12">3 Years (12 quarters)</option>
+                <option value="16" selected>4 Years (16 quarters)</option>
+                <option value="20">5 Years (20 quarters)</option>
+                <option value="custom">Custom</option>
+            `;
+        }
         
         // Update placeholder for custom input
-        customInput.placeholder = 'Enter quarters';
+        if (customInput) customInput.placeholder = 'Enter quarters';
     }
 }
 
@@ -2041,7 +2073,7 @@ function calculateDynamicSettings() {
     const unitsPerTerm = actualTotalUnits / academicQuarters;
     
     // Dynamic calculations for balanced distribution
-    const minUnits = Math.max(8, Math.floor(unitsPerTerm * 0.8));
+    const minUnits = 12; // Hard-set to 12 units
     const maxUnits = Math.min(22, Math.ceil(unitsPerTerm * 1.06)); // Fine-tuned for balanced distribution
     const targetUnits = Math.round(unitsPerTerm);
     
@@ -2064,8 +2096,8 @@ function calculateDynamicSettings() {
 }
 
 function updateDynamicSettings() {
-    const quartersSelect = document.getElementById('quartersToGraduate');
-    const customInput = document.getElementById('customQuarters');
+    const quartersSelect = getElementByIdWithFallback('quartersToGraduateNew', 'quartersToGraduate');
+    const customInput = getElementByIdWithFallback('customQuartersNew', 'customQuarters');
     
     // Store previous values to detect changes
     const previousQuarters = dynamicSettings.useCustomQuarters ? 
@@ -2122,11 +2154,16 @@ function updateDynamicSettings() {
 }
 
 function updateAcademicSystem() {
-    const systemSelect = document.getElementById('academicSystemMain');
-    currentAcademicSystem = systemSelect.value;
+    const systemSelect = getElementByIdWithFallback('academicSystemNew', 'academicSystemMain');
+    if (systemSelect) {
+        currentAcademicSystem = systemSelect.value;
+    }
     
     // Update graduation timeline UI based on academic system
     updateAcademicSystemUI();
+    
+    const quartersSelect = getElementByIdWithFallback('quartersToGraduateNew', 'quartersToGraduate');
+    const customInput = getElementByIdWithFallback('customQuartersNew', 'customQuarters');
     
     // Adjust current selection to equivalent term count when switching systems
     if (!dynamicSettings.useCustomQuarters) {
@@ -2135,19 +2172,19 @@ function updateAcademicSystem() {
             // Convert quarters to semesters (divide by 2)
             const equivalentSemesters = Math.round(currentTerms / 2);
             dynamicSettings.quartersToGraduate = equivalentSemesters;
-            document.getElementById('quartersToGraduate').value = equivalentSemesters;
+            if (quartersSelect) quartersSelect.value = equivalentSemesters;
         } else {
             // Convert semesters to quarters (multiply by 2)
             const equivalentQuarters = currentTerms * 2;
             dynamicSettings.quartersToGraduate = equivalentQuarters;
-            document.getElementById('quartersToGraduate').value = equivalentQuarters;
+            if (quartersSelect) quartersSelect.value = equivalentQuarters;
         }
     }
     
     // Handle custom selection
     if (dynamicSettings.useCustomQuarters) {
-        document.getElementById('quartersToGraduate').value = 'custom';
-        document.getElementById('customQuarters').style.display = 'inline-block';
+        if (quartersSelect) quartersSelect.value = 'custom';
+        if (customInput) customInput.style.display = 'inline-block';
     }
     
     // Update quarters - use dynamic calculation
@@ -2255,7 +2292,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     setupDragAndDrop();
     
-    if (document.getElementById('dataUrl').value) {
+    const dataUrlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
+    if (dataUrlInput && dataUrlInput.value) {
          loadCourseData();
     } else {
         initializeQuarters(); 
@@ -2267,4 +2305,76 @@ function openPlannerTemplate() {
     // Open the planner template in a new tab
     const templateUrl = 'https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing'; // Replace with actual template URL
     window.open(templateUrl, '_blank', 'noopener,noreferrer');
+}
+
+function updateFileNameDisplay(fileName) {
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
+    if (fileNameDisplay) {
+        if (fileName) {
+            fileNameDisplay.textContent = fileName;
+            fileNameDisplay.classList.add('uploaded');
+            fileNameDisplay.style.display = 'inline-block';
+        } else {
+            fileNameDisplay.textContent = '';
+            fileNameDisplay.classList.remove('uploaded');
+            fileNameDisplay.style.display = 'none';
+        }
+    }
+}
+
+function handleQuickFileSelect(event) {
+    const fileInput = event.target;
+    const errorMessage = document.getElementById('errorMessage');
+    const uploadButton = fileInput.closest('.upload-icon-button');
+    
+    if (fileInput.files.length > 0) {
+        const file = fileInput.files[0];
+        
+        // Check file extension
+        const fileNameStr = file.name.toLowerCase();
+        if (!fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+            showError("Please select a TSV file (.tsv or .txt extension)");
+            fileInput.value = ''; // Clear the input
+            // Remove uploaded state
+            if (uploadButton) uploadButton.classList.remove('file-uploaded');
+            updateFileNameDisplay(null);
+            return;
+        }
+        
+        // Add visual feedback for file upload
+        if (uploadButton) uploadButton.classList.add('file-uploaded');
+        
+        // Update file name display
+        updateFileNameDisplay(file.name);
+        
+        // Clear any existing error messages
+        errorMessage.style.display = 'none';
+        
+        // Load the file immediately
+        loadCourseDataFromQuickFile(file);
+    } else {
+        // Remove uploaded state if no file selected
+        if (uploadButton) uploadButton.classList.remove('file-uploaded');
+        updateFileNameDisplay(null);
+    }
+}
+
+async function loadCourseDataFromQuickFile(file) {
+    try {
+        document.body.classList.add('loading');
+        
+        // Clear all pinned courses and do a hard reset
+        pinnedCourses.clear();
+        lockedQuarters.clear();
+        graph = {};
+
+        // Read file content
+        const tsvData = await readFileAsText(file);
+        await processTSVData(tsvData);
+        
+    } catch (error) {
+        console.error("Error in loadCourseDataFromQuickFile:", error);
+        showError("Error loading file: " + error.message);
+        document.body.classList.remove('loading');
+    }
 }
