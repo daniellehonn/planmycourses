@@ -1628,10 +1628,13 @@ h3 {
 .input-module {
     background: linear-gradient(135deg, #ffffff, #f8fafc);
     border-radius: 24px;
-    padding: 32px;
+    padding: 22px;
     margin-bottom: 24px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     border: 3px solid #e2e8f0;
+    height: 220px;
+    display: flex;
+    flex-direction: column;
 }
 
 .input-title {
@@ -1643,11 +1646,14 @@ h3 {
     line-height: 1.2;
 }
 
-
 /* Template Tooltip */
 .template-tooltip {
     text-align: left;
     padding: 10px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
 }
 
 .template-tooltip-text {
@@ -1655,10 +1661,9 @@ h3 {
     font-size: 14px;
     font-weight: 500;
     display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
 }
 
 .template-tooltip-button {
@@ -1687,9 +1692,7 @@ h3 {
 .input-settings-bottom {
     display: flex;
     gap: 24px;
-    margin-top: 0px;
-    align-items: flex-start;
-    justify-content: space-between;
+    justify-content: center;
 }
 
 .settings-button-container {
@@ -1932,9 +1935,8 @@ h3 {
 /* Responsive design for input module */
 @media (max-width: 768px) {
     .input-module {
-        padding: 24px 20px;
-        margin-bottom: 20px;
-        border-radius: 20px;
+        height: 200px;
+        padding: 24px;
     }
     
     .input-title {
@@ -1988,5 +1990,213 @@ h3 {
     .settings-button-container .settings-button {
         width: 100%;
         justify-content: center;
+    }
+}
+
+/* Input Header */
+.input-header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 24px;
+    flex-shrink: 0;
+}
+
+.header-left {
+    flex-shrink: 0;
+}
+
+/* Step Progress Bar */
+.step-progress {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    position: relative;
+    padding: 0;
+    margin: 0;
+}
+
+.step-progress::before {
+    content: '';
+    position: absolute;
+    top: 15px;
+    left: 40px;
+    right: 40px;
+    height: 2px;
+    background: #e2e8f0;
+    z-index: 1;
+}
+
+.step {
+    position: relative;
+    z-index: 2;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+}
+
+.step-number {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    position: relative;
+    z-index: 2;
+}
+
+.step.active .step-number {
+    background: #3b82f6;
+    color: white;
+}
+
+.step.completed .step-number {
+    background: #10b981;
+    color: white;
+}
+
+.step-title {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 500;
+    margin: 0;
+    text-align: center;
+}
+
+.step.active .step-title {
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+.step.completed .step-title {
+    color: #10b981;
+    font-weight: 600;
+}
+
+/* Responsive design for input header */
+@media (max-width: 768px) {
+    .input-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .step-progress {
+        width: 100%;
+        padding: 0;
+    }
+
+    .step-progress::before {
+        left: 30px;
+        right: 30px;
+    }
+
+    .step-title {
+        font-size: 11px;
+    }
+}
+
+.step-content {
+    display: none;
+    flex: 1;
+    position: relative;
+}
+
+.step-content.active {
+    display: flex;
+    flex-direction: column;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Step 1: Access Template */
+.step-content[data-step="1"] .template-tooltip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+/* Step 2: Upload List */
+.step-content[data-step="2"] .input-url-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: auto 0;
+}
+
+/* Step 3: Customize */
+.step-content[data-step="3"] .input-settings-bottom {
+    margin: auto 0;
+    padding: 0;
+}
+
+/* Step Navigation */
+.step-navigation {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 16px;
+    flex-shrink: 0;
+}
+
+.back-button,
+.next-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.back-button:hover,
+.next-button:hover {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.arrow {
+    line-height: 1;
+}
+
+/* Hide text, show only arrows */
+.button-text {
+    display: none;
+}
+
+/* Responsive design for step navigation */
+@media (max-width: 768px) {
+    .step-navigation {
+        margin-top: 12px;
+        gap: 12px;
+    }
+
+    .back-button,
+    .next-button {
+        width: 28px;
+        height: 28px;
+        font-size: 16px;
     }
 } 

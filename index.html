@@ -121,68 +121,94 @@
             <!-- Consolidated Input Module -->
             <div class="input-module">
                 <div class="input-header">
-                    <h2 class="input-title">Input:</h2>
-            </div>
-            
-                <div class="template-tooltip">
-                    <span class="template-tooltip-text">Click here to access the template 👉🏻 
-                        <button onclick="openPlannerTemplate()" class="template-tooltip-button">
+                    <div class="header-left">
+                        <h2 class="input-title">Setup:</h2>
+                    </div>
+                    <!-- Step Progress Bar -->
+                    <div class="step-progress">
+                        <div class="step active" data-step="1">
+                            <div class="step-number">1</div>
+                            <div class="step-title">Configure Course List</div>
+                        </div>
+                        <div class="step" data-step="2">
+                            <div class="step-number">2</div>
+                            <div class="step-title">Upload List</div>
+                        </div>
+                        <div class="step" data-step="3">
+                            <div class="step-number">3</div>
+                            <div class="step-title">Customize</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 1: Configure Course List -->
+                <div class="step-content active" data-step="1">
+                    <div class="template-tooltip">
+                        <span class="template-tooltip-text">Input your required course list into the provided template: </span>
+                        <button onclick="openPlannerTemplate()" class="template-tooltip-button" style="padding: 12px 24px; font-size: 16px;">
                             📋 Access Planner Template
-                </button>
-                    </span>
-            </div>
-            
-                <div class="input-url-section">
-                    <div class="upload-icon-button" title="Upload TSV file">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7,10 12,15 17,10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                        <input type="file" id="quickFileInput" accept=".tsv,.txt" onchange="handleQuickFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
-            </div>
-                    <span id="fileNameDisplay" class="file-name-display" style="display: none;"></span>
-                    <input type="text" id="dataUrlNew" placeholder="paste url here or upload file" value="">
-                    <button onclick="loadCourseData()" class="load-data-button">
+                        </button>
+                    </div>
+                    <div class="step-navigation">
+                        <button onclick="goToStep(2)" class="next-button" title="Next Step">→</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Upload List -->
+                <div class="step-content" data-step="2">
+                    <div class="input-url-section">
+                        <div class="upload-icon-button" title="Upload TSV file">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7,10 12,15 17,10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            <input type="file" id="quickFileInput" accept=".tsv,.txt" onchange="handleQuickFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
+                        </div>
+                        <span id="fileNameDisplay" class="file-name-display" style="display: none;"></span>
+                        <input type="text" id="dataUrlNew" placeholder="Paste Google Sheet URL or upload file" value="">
+                        <button onclick="loadCourseData()" class="load-data-button">
                             <span class="button-icon">🚀</span>
                             Load Data
                         </button>
+                    </div>
+                    <div class="step-navigation">
+                        <button onclick="goToStep(1)" class="back-button" title="Previous Step">←</button>
+                        <button onclick="goToStep(3)" class="next-button" title="Next Step">→</button>
+                    </div>
                 </div>
-                
-                <div class="input-settings-bottom">
-                    <div class="setting-group">
-                        <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Semesters to Graduate:</label>
-                        <select id="quartersToGraduateNew" onchange="updateDynamicSettings()">
-                            <option value="4">2 Years (4 Semesters)</option>
-                            <option value="6">3 Years (6 Semesters)</option>
-                            <option value="8" selected>4 Years (8 Semesters)</option>
-                            <option value="10">5 Years (10 Semesters)</option>
-                            <option value="custom">Custom</option>
-                        </select>
-                        <input type="number" id="customQuartersNew" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter semesters">
+
+                <!-- Step 3: Customize -->
+                <div class="step-content" data-step="3">
+                    <div class="input-settings-bottom">
+                        <div class="setting-group">
+                            <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Semesters to Graduate:</label>
+                            <select id="quartersToGraduateNew" onchange="updateDynamicSettings()">
+                                <option value="4">2 Years (4 Semesters)</option>
+                                <option value="6">3 Years (6 Semesters)</option>
+                                <option value="8" selected>4 Years (8 Semesters)</option>
+                                <option value="10">5 Years (10 Semesters)</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            <input type="number" id="customQuartersNew" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter semesters">
                         </div>
-                    
-                    <div class="setting-group">
-                        <label for="academicSystemNew">Academic System:</label>
-                        <select id="academicSystemNew" onchange="updateAcademicSystem()">
-                            <option value="quarter">Quarter System</option>
-                            <option value="semester" selected>Semester System</option>
-                        </select>
+                        
+                        <div class="setting-group">
+                            <label for="academicSystemNew">Academic System:</label>
+                            <select id="academicSystemNew" onchange="updateAcademicSystem()">
+                                <option value="quarter">Quarter System</option>
+                                <option value="semester" selected>Semester System</option>
+                            </select>
+                        </div>
                     </div>
-                    
-                    <div class="settings-button-container">
-                        <button class="settings-button" onclick="toggleSettingsModal()" title="Advanced Settings">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="3"></circle>
-                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                            </svg>
-                            Advanced
-                        </button>
+                    <div class="step-navigation">
+                        <button onclick="goToStep(2)" class="back-button" title="Previous Step">←</button>
                     </div>
                 </div>
-                
+
+                <!-- Error Message Container -->
                 <div id="errorMessage" class="error-message"></div>
-                    </div>
+            </div>
 
             <!-- YouTube Video -->
             <div class="video-section">
@@ -211,7 +237,7 @@
                 <h2>Academic Plan</h2>
                 <div class="action-buttons">
                     <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
-                    <button id="downloadButton" onclick="downloadPlan()">📥 Download Plan</button>
+                    <button id="downloadButton" onclick="downloadPlan()">📥 Export Plan</button>
                 </div>
             </div>
             <div class="plan-features">

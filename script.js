@@ -2378,3 +2378,71 @@ async function loadCourseDataFromQuickFile(file) {
         document.body.classList.remove('loading');
     }
 }
+
+// Step Navigation Functions
+function goToStep(stepNumber) {
+    // Update step indicators
+    document.querySelectorAll('.step').forEach(step => {
+        const currentStep = parseInt(step.dataset.step);
+        step.classList.remove('active');
+        if (currentStep < stepNumber) {
+            step.classList.add('completed');
+        } else if (currentStep === stepNumber) {
+            step.classList.add('active');
+        } else {
+            step.classList.remove('completed');
+        }
+    });
+
+    // Show active step content
+    document.querySelectorAll('.step-content').forEach(content => {
+        content.classList.remove('active');
+        if (parseInt(content.dataset.step) === stepNumber) {
+            content.classList.add('active');
+        }
+    });
+}
+
+// Add click handlers for steps and automatic progression
+document.addEventListener('DOMContentLoaded', () => {
+    // Allow clicking on steps
+    document.querySelectorAll('.step').forEach(step => {
+        step.addEventListener('click', () => {
+            const stepNumber = parseInt(step.dataset.step);
+            // Only allow going back to previous steps or current step
+            if (stepNumber <= getCurrentStep()) {
+                goToStep(stepNumber);
+            }
+        });
+    });
+
+    // Auto-advance after template access
+    const templateButton = document.querySelector('.template-tooltip-button');
+    if (templateButton) {
+        templateButton.addEventListener('click', () => {
+            setTimeout(() => goToStep(2), 500);
+        });
+    }
+
+    // Auto-advance after data load
+    const loadDataButton = document.querySelector('.load-data-button');
+    if (loadDataButton) {
+        const originalOnClick = loadDataButton.onclick;
+        loadDataButton.onclick = async function(e) {
+            if (originalOnClick) {
+                await originalOnClick.call(this, e);
+            }
+            // Only advance if data was loaded successfully (no error message shown)
+            const errorMessage = document.getElementById('errorMessage');
+            if (errorMessage && errorMessage.style.display !== 'block') {
+                setTimeout(() => goToStep(3), 500);
+            }
+        };
+    }
+});
+
+// Helper function to get current active step
+function getCurrentStep() {
+    const activeStep = document.querySelector('.step.active');
+    return activeStep ? parseInt(activeStep.dataset.step) : 1;
+}
