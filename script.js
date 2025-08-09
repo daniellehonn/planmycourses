@@ -484,7 +484,9 @@ function renderPlanner() {
             // Create lock button
             const lockButton = document.createElement('button');
             lockButton.className = 'quarter-lock-button';
-            lockButton.innerHTML = isQuarterLocked(quarter.id) ? '🔒' : '🔓';
+            lockButton.innerHTML = isQuarterLocked(quarter.id) ? 
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="currentColor"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none"></path></svg>' : 
+                '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
             lockButton.title = isQuarterLocked(quarter.id) ? 'Unlock quarter' : 'Lock quarter';
             lockButton.onclick = (e) => {
                 e.stopPropagation();
@@ -530,6 +532,8 @@ function createClassCard(classData) {
     card.draggable = true;
     card.dataset.classId = classData.id;
     
+    // Apply custom color if set - will be handled after card content is populated
+    
     // Add pinned class if course is pinned
     if (isPinnedCourse(classData.id)) {
         card.classList.add('pinned');
@@ -538,6 +542,24 @@ function createClassCard(classData) {
     const prereqsText = classData.prerequisites.join(', ') || 'None';
     const coreqsText = classData.corequisites.join(', ') || 'None';
     
+    // Check for conflicts to include in description
+    const quarterElement = card.closest('.quarter');
+    let conflictDescription = '';
+    
+    if (quarterElement && quarterElement.id !== 'unassignedClasses') {
+        const quarterId = quarterElement.id;
+        const validation = validateCoursePlacement(classData.id, quarterId);
+        if (!validation.isValid) {
+            conflictDescription = `<div style="color: #dc2626; font-weight: 600; margin-top: 8px; padding: 6px; background: rgba(239, 68, 68, 0.1); border-radius: 4px; font-size: 12px;">
+                ⚠️ ${validation.reason}
+            </div>`;
+        }
+    } else if (graph[classData.id] && graph[classData.id].unassignedReason) {
+        conflictDescription = `<div style="color: #ea580c; font-weight: 600; margin-top: 8px; padding: 6px; background: rgba(251, 146, 60, 0.1); border-radius: 4px; font-size: 12px;">
+            ⚠️ ${graph[classData.id].unassignedReason}
+        </div>`;
+    }
+
     // Create structured tooltip content
     let tooltipContent = `
         <span class="course-title">${classData.description || 'No description available'}</span>
@@ -550,6 +572,7 @@ function createClassCard(classData) {
             <span class="coreq-list">${coreqsText}</span>
         </div>
     `;
+    
     
     let planningNote = "";
     if (graph[classData.id] && graph[classData.id].unassignedReason) {
@@ -578,12 +601,163 @@ function createClassCard(classData) {
 
     card.innerHTML = `
         ${classData.name}
-        <span class="units">(${classData.units} units, Diff: ${classData.difficulty})</span>
+        <span class="units">(${classData.units} units, Diff: <span class="difficulty-value" data-class-id="${classData.id}" data-field="difficulty">${classData.difficulty}</span>)</span>
         <span class="tooltip">${tooltipContent}</span>
     `;
     
     card.appendChild(pinButton);
+    
+    // Add double-click event listener to the card for editing
+    card.addEventListener('dblclick', handleCardDoubleClick);
+    
+    // Apply custom color if set
+    if (classData.color && classData.color !== '#ffffff') {
+        card.style.backgroundColor = classData.color;
+        // Adjust text color for better contrast if background is dark
+        const r = parseInt(classData.color.slice(1, 3), 16);
+        const g = parseInt(classData.color.slice(3, 5), 16);
+        const b = parseInt(classData.color.slice(5, 7), 16);
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        if (brightness < 128) {
+            card.style.color = 'white';
+            card.style.borderColor = '#4b5563';
+            // Apply white text to all text elements for better visibility
+            const textElements = card.querySelectorAll('.units, .difficulty-value, .tooltip, .course-title, .prereq-label, .coreq-label, .prereq-list, .coreq-list, .planning-note');
+            textElements.forEach(el => {
+                if (el) el.style.color = 'white';
+            });
+        } else {
+            // Reset to default colors for light backgrounds
+            card.style.color = '';
+            card.style.borderColor = '';
+            const textElements = card.querySelectorAll('.units, .difficulty-value, .tooltip, .course-title, .prereq-label, .coreq-label, .prereq-list, .coreq-list, .planning-note');
+            textElements.forEach(el => {
+                if (el) el.style.color = '';
+            });
+        }
+    }
+    
     return card;
+}
+
+function handleFieldEdit(event) {
+    const span = event.target;
+    const classId = span.dataset.classId;
+    const field = span.dataset.field;
+    const newValue = span.textContent.trim();
+    
+    if (field === 'difficulty') {
+        const newDifficulty = parseInt(newValue);
+        if (isNaN(newDifficulty) || newDifficulty < 1 || newDifficulty > 8) {
+            alert('Difficulty must be a number between 1 and 8');
+            span.textContent = ALL_CLASSES_DATA.find(c => c.id === classId)?.difficulty || 1;
+            return;
+        }
+        
+        // Update the course data
+        const course = ALL_CLASSES_DATA.find(c => c.id === classId);
+        if (course) {
+            course.difficulty = newDifficulty;
+            // Re-render to update calculations
+            renderPlanner();
+        }
+    }
+}
+
+
+function handleCardDoubleClick(event) {
+    const card = event.currentTarget;
+    const classId = card.dataset.classId;
+    const course = ALL_CLASSES_DATA.find(c => c.id === classId);
+    
+    if (course) {
+        showEditModal(course);
+    }
+}
+
+function showEditModal(course) {
+    // Create modal overlay
+    const modal = document.createElement('div');
+    modal.className = 'edit-modal';
+    modal.innerHTML = `
+        <div class="edit-modal-content">
+            <div class="edit-modal-header">
+                <input type="color" id="edit-color" class="color-picker" value="${course.color || '#ffffff'}">
+                <h3>Edit Course: ${course.name}</h3>
+            </div>
+            <form id="edit-course-form">
+                <div class="edit-form-group">
+                    <label for="edit-name">Course Name</label>
+                    <input type="text" id="edit-name" value="${course.name}">
+                </div>
+                <div class="edit-form-group">
+                    <label for="edit-description">Description</label>
+                    <textarea id="edit-description" rows="3">${course.description || ''}</textarea>
+                </div>
+                <div class="edit-form-group">
+                    <label for="edit-units">Units</label>
+                    <input type="number" id="edit-units" value="${course.units}" min="1" max="10">
+                </div>
+                <div class="edit-form-group">
+                    <label for="edit-difficulty">Difficulty (1-8)</label>
+                    <input type="number" id="edit-difficulty" value="${course.difficulty}" min="1" max="8">
+                </div>
+                <div class="edit-form-group">
+                    <label for="edit-prerequisites">Prerequisites (comma-separated)</label>
+                    <input type="text" id="edit-prerequisites" value="${course.prerequisites.join(', ')}">
+                </div>
+                <div class="edit-form-group">
+                    <label for="edit-corequisites">Corequisites (comma-separated)</label>
+                    <input type="text" id="edit-corequisites" value="${course.corequisites.join(', ')}">
+                </div>
+                <div class="edit-form-actions">
+                    <button type="button" class="cancel">Cancel</button>
+                    <button type="submit" class="save">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Handle form submission
+    const form = modal.querySelector('#edit-course-form');
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        // Update course data
+        course.name = document.getElementById('edit-name').value.trim();
+        course.description = document.getElementById('edit-description').value.trim();
+        course.units = parseInt(document.getElementById('edit-units').value) || course.units;
+        course.difficulty = parseInt(document.getElementById('edit-difficulty').value) || course.difficulty;
+        course.color = document.getElementById('edit-color').value;
+        
+        // Parse prerequisites and corequisites
+        const prereqsText = document.getElementById('edit-prerequisites').value.trim();
+        course.prerequisites = prereqsText ? prereqsText.split(',').map(p => p.trim()).filter(p => p) : [];
+        
+        const coreqsText = document.getElementById('edit-corequisites').value.trim();
+        course.corequisites = coreqsText ? coreqsText.split(',').map(c => c.trim()).filter(c => c) : [];
+        
+        // Close modal and re-render
+        document.body.removeChild(modal);
+        renderPlanner();
+    });
+    
+    // Handle cancel
+    modal.querySelector('.cancel').addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+    
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+    
+    // Focus first input
+    document.getElementById('edit-name').focus();
 }
 
 function handlePinToggle(classId) {
@@ -626,18 +800,42 @@ function handleDragStart(e) {
     draggedClassId = e.target.dataset.classId;
     e.dataTransfer.setData('text/plain', draggedClassId);
     e.target.classList.add('dragging');
+    
+    // Highlight prerequisite dependencies
+    highlightPrerequisiteDependencies(draggedClassId);
+    
+    // Start tracking mouse movement for line updates
+    document.addEventListener('dragover', updateLinePositions);
 }
 
 function handleDragEnd(e) {
     e.target.classList.remove('dragging');
     draggedClassId = null; 
+    
+    // Stop tracking mouse movement
+    document.removeEventListener('dragover', updateLinePositions);
+    
+    // Clear highlighting
+    clearPrerequisiteHighlighting();
 }
 
 function handleDragOver(e) {
     e.preventDefault(); 
     const dropZone = e.target.closest('.drop-zone');
     if (dropZone) {
-         dropZone.classList.add('drop-target-hover');
+        dropZone.classList.add('drop-target-hover');
+        
+        // Show conflict info when hovering
+        if (draggedClassId) {
+            const targetQuarterId = dropZone.id === 'unassignedClasses' ? 'unassigned' : dropZone.dataset.quarterId;
+            const validation = validateCoursePlacement(draggedClassId, targetQuarterId);
+            
+            if (!validation.isValid) {
+                dropZone.title = validation.reason;
+            } else {
+                dropZone.title = '';
+            }
+        }
     }
 }
 
@@ -645,7 +843,162 @@ function handleDragLeave(e) {
     const dropZone = e.target.closest('.drop-zone');
     if (dropZone) {
         dropZone.classList.remove('drop-target-hover');
+        dropZone.title = '';
     }
+}
+
+function highlightPrerequisiteDependencies(courseId) {
+    const course = ALL_CLASSES_DATA.find(c => c.id === courseId);
+    if (!course) return;
+    
+    // Create overlay for lines
+    const overlay = document.createElement('div');
+    overlay.id = 'prerequisite-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 9999;
+    `;
+    document.body.appendChild(overlay);
+    
+    // Find all courses that have this course as prerequisite
+    const dependentCourses = ALL_CLASSES_DATA.filter(c => 
+        c.prerequisites.includes(courseId)
+    );
+    
+    // Find the dragged course element
+    const draggedElement = document.querySelector(`[data-class-id="${courseId}"]`);
+    if (!draggedElement) return;
+    
+    const draggedRect = draggedElement.getBoundingClientRect();
+    const draggedCenter = {
+        x: draggedRect.left + draggedRect.width / 2,
+        y: draggedRect.top + draggedRect.height / 2
+    };
+    
+    // Highlight dependent courses
+    dependentCourses.forEach(dependentCourse => {
+        const depElement = document.querySelector(`[data-class-id="${dependentCourse.id}"]`);
+        if (depElement) {
+            // Add highlight class
+            depElement.classList.add('prerequisite-dependent');
+            
+            // Draw line
+            const depRect = depElement.getBoundingClientRect();
+            const depCenter = {
+                x: depRect.left + depRect.width / 2,
+                y: depRect.top + depRect.height / 2
+            };
+            
+            drawLine(overlay, draggedCenter, depCenter, 'prerequisite-line');
+        }
+    });
+    
+    // Also highlight prerequisites of the dragged course
+    course.prerequisites.forEach(prereqId => {
+        const prereqElement = document.querySelector(`[data-class-id="${prereqId}"]`);
+        if (prereqElement) {
+            prereqElement.classList.add('prerequisite-prerequisite');
+            
+            // Draw line from prerequisite to dragged course
+            const prereqRect = prereqElement.getBoundingClientRect();
+            const prereqCenter = {
+                x: prereqRect.left + prereqRect.width / 2,
+                y: prereqRect.top + prereqRect.height / 2
+            };
+            
+            drawLine(overlay, prereqCenter, draggedCenter, 'prerequisite-line');
+        }
+    });
+}
+
+function drawLine(container, start, end, className) {
+    const line = document.createElement('div');
+    line.className = className;
+    
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+    
+    line.style.cssText = `
+        position: absolute;
+        left: ${start.x}px;
+        top: ${start.y}px;
+        width: ${length}px;
+        height: 2px;
+        background-color: #ff6b6b;
+        transform-origin: 0 50%;
+        transform: rotate(${angle}deg);
+        opacity: 0.8;
+        z-index: 10000;
+    `;
+    
+    container.appendChild(line);
+}
+
+function clearPrerequisiteHighlighting() {
+    // Remove overlay
+    const overlay = document.getElementById('prerequisite-overlay');
+    if (overlay) {
+        overlay.remove();
+    }
+    
+    // Remove highlight classes
+    document.querySelectorAll('.prerequisite-dependent, .prerequisite-prerequisite').forEach(el => {
+        el.classList.remove('prerequisite-dependent', 'prerequisite-prerequisite');
+    });
+}
+
+function updateLinePositions(e) {
+    const overlay = document.getElementById('prerequisite-overlay');
+    if (!overlay || !draggedClassId) return;
+    
+    // Clear existing lines
+    overlay.querySelectorAll('.prerequisite-line').forEach(line => line.remove());
+    
+    const course = ALL_CLASSES_DATA.find(c => c.id === draggedClassId);
+    if (!course) return;
+    
+    // Get current mouse position
+    const mousePos = { x: e.clientX, y: e.clientY };
+    
+    // Find all courses that have this course as prerequisite
+    const dependentCourses = ALL_CLASSES_DATA.filter(c => 
+        c.prerequisites.includes(draggedClassId)
+    );
+    
+    // Draw lines from mouse position to dependent courses
+    dependentCourses.forEach(dependentCourse => {
+        const depElement = document.querySelector(`[data-class-id="${dependentCourse.id}"]`);
+        if (depElement) {
+            const depRect = depElement.getBoundingClientRect();
+            const depCenter = {
+                x: depRect.left + depRect.width / 2,
+                y: depRect.top + depRect.height / 2
+            };
+            
+            drawLine(overlay, mousePos, depCenter, 'prerequisite-line');
+        }
+    });
+    
+    // Draw lines from prerequisites to mouse position
+    course.prerequisites.forEach(prereqId => {
+        const prereqElement = document.querySelector(`[data-class-id="${prereqId}"]`);
+        if (prereqElement) {
+            const prereqRect = prereqElement.getBoundingClientRect();
+            const prereqCenter = {
+                x: prereqRect.left + prereqRect.width / 2,
+                y: prereqRect.top + prereqRect.height / 2
+            };
+            
+            drawLine(overlay, prereqCenter, mousePos, 'prerequisite-line');
+        }
+    });
 }
 
 function handleDrop(e) {
@@ -664,11 +1017,131 @@ function handleDrop(e) {
 
     const newQuarter = getQuarterById(targetQuarterId);
     if (newQuarter) {
+        // Allow placement but show conflict reason
+        const validationResult = validateCoursePlacement(classId, targetQuarterId);
+        
+        // Allow placement without showing conflict message
+        
         if (!newQuarter.classes.includes(classId)) { 
             newQuarter.classes.push(classId);
         }
     }
     renderPlanner(); 
+}
+
+function validateCoursePlacement(classId, targetQuarterId) {
+    if (targetQuarterId === 'unassigned') {
+        return { isValid: true, reason: '' };
+    }
+
+    const course = findClassById(classId);
+    if (!course) {
+        return { isValid: false, reason: 'Course not found' };
+    }
+
+    const targetQuarter = getQuarterById(targetQuarterId);
+    if (!targetQuarter) {
+        return { isValid: false, reason: 'Quarter not found' };
+    }
+
+    // Get courses completed before this quarter
+    const completedBeforeQuarter = getCompletedCoursesBeforeQuarter(targetQuarterId);
+    
+    // Check prerequisites
+    for (const prereqId of course.prerequisites) {
+        if (!completedBeforeQuarter.has(prereqId)) {
+            const prereqCourse = findClassById(prereqId);
+            const prereqName = prereqCourse ? prereqCourse.id : prereqId;
+            return { isValid: false, reason: `Missing prerequisite: ${prereqName}` };
+        }
+    }
+
+    // Check corequisites
+    for (const coreqId of course.corequisites) {
+        if (!completedBeforeQuarter.has(coreqId) && 
+            !targetQuarter.classes.includes(coreqId)) {
+            const coreqCourse = findClassById(coreqId);
+            const coreqName = coreqCourse ? coreqCourse.id : coreqId;
+            return { isValid: false, reason: `Missing corequisite: ${coreqName} (must be taken same quarter)` };
+        }
+    }
+
+    // Check unit limits
+    const currentUnits = targetQuarter.units;
+    const newUnits = currentUnits + course.units;
+    if (newUnits > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER) {
+        return { isValid: false, reason: `Would exceed max units (${PLANNING_CONFIG.MAX_UNITS_PER_QUARTER}). Current: ${currentUnits}, Adding: ${course.units}` };
+    }
+
+    // Check difficulty limits
+    const currentDifficulty = targetQuarter.difficulty;
+    const newDifficulty = currentDifficulty + (course.difficulty || 1);
+    if (newDifficulty > PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER) {
+        return { isValid: false, reason: `Would exceed max difficulty (${PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER}). Current: ${currentDifficulty}, Adding: ${course.difficulty}` };
+    }
+
+    return { isValid: true, reason: '' };
+}
+
+function getCompletedCoursesBeforeQuarter(targetQuarterId) {
+    const completed = new Set();
+    
+    // Add summer courses as completed
+    const summerQuarters = quartersData.filter(q => 
+        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    );
+    summerQuarters.forEach(quarter => {
+        quarter.classes.forEach(courseId => completed.add(courseId));
+    });
+
+    // Add courses from quarters before the target quarter
+    const targetOrder = getQuarterChronologicalOrder(getQuarterById(targetQuarterId));
+    quartersData.forEach(quarter => {
+        if (quarter.id !== 'unassigned' && quarter.id !== targetQuarterId) {
+            const quarterOrder = getQuarterChronologicalOrder(quarter);
+            if (quarterOrder < targetOrder) {
+                quarter.classes.forEach(courseId => completed.add(courseId));
+            }
+        }
+    });
+
+    return completed;
+}
+
+function showConflictMessage(reason, x, y) {
+    // Remove any existing conflict messages
+    const existingMessages = document.querySelectorAll('.conflict-message');
+    existingMessages.forEach(msg => msg.remove());
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'conflict-message';
+    messageDiv.textContent = reason;
+    messageDiv.style.cssText = `
+        position: fixed;
+        top: ${y - 40}px;
+        left: ${x}px;
+        background: #fee2e2;
+        color: #dc2626;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        box-shadow: 0 2px 8px rgba(220, 38, 38, 0.2);
+        border: 1px solid #fca5a5;
+        z-index: 10000;
+        max-width: 250px;
+        pointer-events: none;
+        animation: fadeInOut 3s ease-in-out;
+    `;
+
+    document.body.appendChild(messageDiv);
+
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        if (messageDiv.parentNode) {
+            messageDiv.remove();
+        }
+    }, 3000);
 }
 
 function validateAllPrerequisites() {
@@ -840,34 +1313,57 @@ function resetQuartersForPlanning() {
         return null;
     }
     
-    // Store pinned courses before reset
+    // Store courses from locked quarters and all pinned courses
+    const lockedCoursesData = new Map();
     const pinnedCoursesData = new Map();
+    
     quartersData.forEach(quarter => {
-        if (quarter.id !== 'unassigned' && quarter.pinnedClasses.length > 0) {
-            pinnedCoursesData.set(quarter.id, [...quarter.pinnedClasses]);
+        if (quarter.id !== 'unassigned') {
+            if (isQuarterLocked(quarter.id)) {
+                // Store all courses in locked quarters
+                lockedCoursesData.set(quarter.id, [...quarter.classes]);
+            } else if (quarter.pinnedClasses.length > 0) {
+                // Store pinned courses from unlocked quarters
+                pinnedCoursesData.set(quarter.id, [...quarter.pinnedClasses]);
+            }
         }
     });
     
-    // Reset all courses to unassigned
-    unassignedQuarter.classes = ALL_CLASSES_DATA.map(c => c.id);
+    // Reset all courses to unassigned, but exclude courses in locked quarters
+    const lockedCourseIds = new Set();
     quartersData.forEach(quarter => {
-        if (quarter.id !== 'unassigned') {
+        if (quarter.id !== 'unassigned' && isQuarterLocked(quarter.id)) {
+            quarter.classes.forEach(classId => lockedCourseIds.add(classId));
+        }
+    });
+    
+    unassignedQuarter.classes = ALL_CLASSES_DATA
+        .map(c => c.id)
+        .filter(id => !lockedCourseIds.has(id));
+    
+    quartersData.forEach(quarter => {
+        if (quarter.id !== 'unassigned' && !isQuarterLocked(quarter.id)) {
+            // Only reset unlocked quarters
             quarter.classes = [];
             quarter.units = 0;
             quarter.difficulty = 0;
             // Keep pinnedClasses array but clear it for now
             quarter.pinnedClasses = [];
+        } else if (quarter.id !== 'unassigned' && isQuarterLocked(quarter.id)) {
+            // Keep locked quarters as-is, no need to clear since we preserve them
+            // Just update their pinnedClasses to include all current courses
+            quarter.pinnedClasses = [...quarter.classes];
         }
     });
 
-    // Restore pinned courses to their quarters
+    // Restore pinned courses to unlocked quarters
     pinnedCoursesData.forEach((pinnedClassIds, quarterId) => {
         const quarter = getQuarterById(quarterId);
-        if (quarter) {
+        if (quarter && !isQuarterLocked(quarterId)) {
             pinnedClassIds.forEach(classId => {
                 // Remove from unassigned
                 unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== classId);
-                // Add back to quarter
+                // Add back to unlocked quarter
                 quarter.classes.push(classId);
                 quarter.pinnedClasses.push(classId);
                 
@@ -886,7 +1382,7 @@ function resetQuartersForPlanning() {
 
 function getAcademicQuartersForPlanning() {
     return quartersData
-        .filter(q => q.id !== 'unassigned' && !q.name.toLowerCase().includes('summer'))
+        .filter(q => q.id !== 'unassigned' && !q.name.toLowerCase().includes('summer') && !isQuarterLocked(q.id))
         .sort((a, b) => getQuarterChronologicalOrder(a) - getQuarterChronologicalOrder(b));
 }
 
@@ -1342,6 +1838,19 @@ function autoPlanCoreCourses() {
         });
     });
     
+    // Mark courses in locked quarters as placed so they won't be auto-planned
+    quartersData.forEach(quarter => {
+        if (quarter.id !== 'unassigned' && isQuarterLocked(quarter.id)) {
+            quarter.classes.forEach(courseId => {
+                if (graph[courseId]) {
+                    graph[courseId].placed = true;
+                }
+                // Also add to completed courses to serve as prerequisites
+                completedCourses.add(courseId);
+            });
+        }
+    });
+    
     // Main planning loop for each quarter
     for (const quarter of academicQuarters) {
         let coursesAddedToThisQuarter = new Set();
@@ -1551,7 +2060,17 @@ function unpinCourse(classId) {
 }
 
 function isPinnedCourse(classId) {
-    return pinnedCourses.has(classId);
+    // Check if course is explicitly pinned
+    if (pinnedCourses.has(classId)) {
+        return true;
+    }
+    
+    // Check if course is in a locked quarter
+    return quartersData.some(quarter => 
+        quarter.id !== 'unassigned' && 
+        isQuarterLocked(quarter.id) && 
+        quarter.classes.includes(classId)
+    );
 }
 
 function getQuarterPinnedCourses(quarterId) {
