@@ -40,8 +40,14 @@ open http://localhost:8000
 
 ### Testing & Validation
 - No formal test suite - validation done through TSV data validation
-- Check browser console for planning algorithm logs
+- Check browser console for planning algorithm logs (filter for "[Planning]" prefix)
 - Use sample TSV data for testing edge cases
+- Test file upload with `.tsv` and `.txt` extensions
+- Test URL loading with Google Sheets published TSV format
+
+### Debug Logging
+- Enable verbose logging: Check "Show Debug Logs" in advanced settings
+- Key console filters: `[Planning]`, `[Validation]`, `[DragDrop]`
 
 ## Key Features & Implementation Details
 
@@ -55,6 +61,7 @@ open http://localhost:8000
 - Prerequisite cycle detection
 - Corequisite symmetry validation
 - Missing course reference checking
+- TSV format validation with specific column requirements
 
 ### UI State Management
 - **Pinned Courses**: Fixed placement via `pinnedCourses` Set
@@ -70,16 +77,22 @@ open http://localhost:8000
 ## Google Sheets Integration
 
 ### Required Columns
-- Course Number
-- Prerequisites (comma-separated)
-- Corequisites (comma-separated)
-- Description
-- Units
-- Difficulty (1-8 scale)
-- Taken (format: "Fall, Year 1")
+- **Course Number** (e.g., "CS 101")
+- **Prerequisites** (comma-separated course numbers)
+- **Corequisites** (comma-separated course numbers)
+- **Description** (course description)
+- **Units** (numeric, 1-5 typical)
+- **Difficulty** (1-8 scale, where 8 is hardest)
+- **Taken** (format: "Fall, Year 1" or "Not Assigned")
 
 ### Template URL
 `https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing`
+
+### Data Format Notes
+- **Course Number**: Must be unique across all courses
+- **Prerequisites**: Courses must exist (case-sensitive matching)
+- **Taken**: Use "Not Assigned" for future courses, specific format for completed courses
+- **Empty cells**: Treated as empty arrays for prerequisites/corequisites
 
 ## Configuration Constants
 
@@ -101,20 +114,26 @@ TARGET_DIFFICULTY_PER_QUARTER: 12
 ## Common Development Tasks
 
 ### Adding New Course Attributes
-1. Update TSV parser in `processTSVData()`
-2. Add validation in `validateTSVData()`
-3. Update UI rendering in `createClassCard()`
-4. Modify export format in `downloadPlan()`
+1. Update TSV parser in `processTSVData()` (script.js:240-290)
+2. Add validation in `validateTSVData()` (script.js:300-336)
+3. Update UI rendering in `createClassCard()` (script.js:450-500)
+4. Modify export format in `downloadPlan()` (script.js:1800-1850)
 
 ### Customizing Planning Algorithm
-- Adjust scoring weights in `PLANNING_CONFIG.SCORING`
-- Modify placement phases in `autoPlanCoreCourses()`
-- Add new constraints in validation functions
+- Adjust scoring weights in `PLANNING_CONFIG.SCORING` (script.js:24-33)
+- Modify placement phases in `autoPlanCoreCourses()` (script.js:1320-1380)
+- Add new constraints in validation functions (script.js:340-400)
 
 ### Mobile Responsiveness
 - All styles use mobile-first approach
 - Touch-friendly drag targets (minimum 44x44px)
 - Responsive grid layouts in CSS
+- Test with device emulation in Chrome DevTools
+
+### Adding New Academic Systems
+- Update `currentAcademicSystem` state handling
+- Modify quarter/semester generation logic
+- Update UI labels in `generateQuarterHeaders()`
 
 ## Browser Compatibility
 - **Modern Browsers**: Full support (Chrome 60+, Firefox 55+, Safari 12+)
@@ -125,9 +144,12 @@ TARGET_DIFFICULTY_PER_QUARTER: 12
 - **Lazy Loading**: Courses loaded on-demand via TSV
 - **Efficient DOM Updates**: Full re-render on state changes
 - **Algorithm Complexity**: O(n²) worst case for large course lists (>100 courses)
+- **Memory Usage**: All data stored in-memory, no pagination
+- **Rendering**: Virtual scrolling not implemented - avoid >200 courses
 
 ## Security Notes
 - No server-side code (client-side only)
-- TSV data validation prevents XSS
-- Google Analytics integration via gtag.js
-- All external links use `rel="noopener noreferrer"
+- TSV data validation prevents XSS through HTML escaping
+- Google Analytics integration via gtag.js with anonymized IP
+- All external links use `rel="noopener noreferrer"`
+- File upload restricted to `.tsv` and `.txt` extensions only
