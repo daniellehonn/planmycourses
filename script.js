@@ -50,33 +50,49 @@ async function loadCourseData() {
     const urlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
     const errorMessage = document.getElementById('errorMessage');
     const url = urlInput.value.trim();
-
-    if (!url) {
-        showError("Please enter a valid URL");
-        return;
-    }
+    
+    // Check if a file has been uploaded via the quick file input
+    const quickFileInput = document.getElementById('quickFileInput');
+    const hasUploadedFile = quickFileInput && quickFileInput.files.length > 0;
 
     try {
         document.body.classList.add('loading');
         errorMessage.style.display = 'none';
-
-        // Clear file uploaded state when loading from URL
-        const uploadButton = document.querySelector('.upload-icon-button');
-        if (uploadButton) uploadButton.classList.remove('file-uploaded');
-        updateFileNameDisplay(null);
 
         // Clear all pinned courses and do a hard reset
         pinnedCourses.clear();
         lockedQuarters.clear();
         graph = {};
 
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch data (status: ${response.status})`);
-        }
+        if (hasUploadedFile) {
+            // Load from uploaded file
+            const file = quickFileInput.files[0];
+            
+            // Validate file extension
+            const fileNameStr = file.name.toLowerCase();
+            if (!fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+                throw new Error("Please select a TSV file (.tsv or .txt extension)");
+            }
+            
+            const tsvData = await readFileAsText(file);
+            await processTSVData(tsvData);
+        } else if (url) {
+            // Load from URL
+            // Clear file uploaded state when loading from URL
+            const uploadButton = document.querySelector('.upload-icon-button');
+            if (uploadButton) uploadButton.classList.remove('file-uploaded');
+            updateFileNameDisplay(null);
 
-        const tsvData = await response.text();
-        await processTSVData(tsvData);
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch data (status: ${response.status})`);
+            }
+
+            const tsvData = await response.text();
+            await processTSVData(tsvData);
+        } else {
+            throw new Error("Please either upload a TSV file or enter a valid URL");
+        }
         
     } catch (error) {
         console.error("Error in loadCourseData:", error);
@@ -2869,8 +2885,7 @@ function handleQuickFileSelect(event) {
         // Clear any existing error messages
         errorMessage.style.display = 'none';
         
-        // Load the file immediately
-        loadCourseDataFromQuickFile(file);
+        // Don't load the file immediately - wait for Load Data button click
     } else {
         // Remove uploaded state if no file selected
         if (uploadButton) uploadButton.classList.remove('file-uploaded');
