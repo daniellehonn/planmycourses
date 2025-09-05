@@ -3,12 +3,15 @@
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     margin: 0;
-    padding: 24px;
+    padding: 0;
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
     color: #1e293b;
     font-size: 14px;
     line-height: 1.5;
     font-weight: 400;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Sidebar styles */
@@ -198,6 +201,9 @@ body {
     gap: 24px;
     max-width: 1400px;
     margin: 0 auto;
+    padding: 24px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .unassigned-classes-container, .years-container {
@@ -847,6 +853,50 @@ h3 {
 /* Tab Content */
 .tab-content {
     /* min-height: 100px; */
+}
+
+/* GitHub Footer */
+.github-footer {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0;
+    padding: 24px 0;
+    margin-top: auto;
+    text-align: center;
+    border-top: 1px solid #334155;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.footer-content p {
+    margin: 0;
+    font-size: 14px;
+}
+
+.github-footer a {
+    color: #e2e8f0;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.github-footer a:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+    color: #ffffff;
+}
+
+.github-icon {
+    transition: transform 0.3s ease;
+}
+
+.github-footer a:hover .github-icon {
+    transform: rotate(360deg);
 }
 
 .tab-panel {
