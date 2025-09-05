@@ -6,8 +6,10 @@ Plan your entire college degree with the click of a button.
 
 1. [Copy this template](https://docs.google.com/spreadsheets/d/1B4a1CFqqpGFjEHmG9n2QvxpZ1cs8zVzQwM9eUcy3y4E/copy) 
 2. Add your courses
-3. Upload to planner 
-4. Drag to adjust 
+3. Upload to [planner]("daniellehonn.github.io/planmycourses")
+4. Auto-plan!
+5. Drag to adjust 
+6. Export for future use
 
 ## Features
 
@@ -22,12 +24,3 @@ Plan your entire college degree with the click of a button.
 - **Dependency lines** show prerequisite relationships
 
 
-## How It Works
-
-1. **Input**: Upload your course list
-2. **Optimize**: AI finds best arrangement
-3. **Adjust**: Drag courses to fine-tune
-4. **Export**: Save as TSV or screenshot
-
-
-## Try It [Here]("daniellehonn.github.io/planmycourses")
