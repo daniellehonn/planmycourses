@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,94 +10,108 @@
 <!-- Google tag (gtag.js) -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-92G8WGBVFP"></script>
 <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
 
-  gtag('config', 'G-92G8WGBVFP');
+    gtag('config', 'G-92G8WGBVFP');
 </script>
+
 <body>
 
     <!-- Sidebar for instructions -->
     <div class="sidebar" id="instructionsSidebar">
         <div class="sidebar-header">
             <h1>📋 Setup Instructions</h3>
-            <button class="sidebar-close" onclick="toggleSidebar()">×</button>
+                <button class="sidebar-close" onclick="toggleSidebar()">×</button>
         </div>
         <div class="sidebar-content">
             <div class="instructions-step">
                 <h2>Step 1: Access the Template</h4>
-                <ol>
-                    <li>
-                        <button onclick="openPlannerTemplate()" class="template-button-small">
-                            <span class="button-icon">📋</span>
-                            Open Course Planner Template
-                        </button>
-                    </li>
-                    <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own editable version</li>
-                    <img src="./img/makeacopy.png" alt="Screenshot showing how to make a copy of the template" style="max-width: 40%; margin: 10px 0; border: 1px solid #ccc;">
-                </ol>
+                    <ol>
+                        <li>
+                            <button onclick="openPlannerTemplate()" class="template-button-small">
+                                <span class="button-icon">📋</span>
+                                Open Course Planner Template
+                            </button>
+                        </li>
+                        <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own editable
+                            version</li>
+                        <img src="./img/makeacopy.png" alt="Screenshot showing how to make a copy of the template"
+                            style="max-width: 40%; margin: 10px 0; border: 1px solid #ccc;">
+                    </ol>
             </div>
-            
+
             <div class="instructions-step">
                 <h2>Step 2: Customize Your Course List</h4>
-                <p>Replace the sample data with your own courses</p>
-                <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨ PLEASE NOTE:</strong> If you have fulfilled a course elsewhere (eg. CC, AP, IB, etc.), please don't include it in your course list or list it as a prerequisite/corequisite!</p>
-                <h3><strong>For each course, fill in:</strong></h3>
-                <ol>
-                    <li><strong>Course Name & Number</strong> (e.g., "CS 101"):</li>
-                    <li><strong>Taken:</strong>
-                        <ul>
-                            <li>Write <code>Not Assigned</code> if you haven't taken it yet</li>
-                            <li>Otherwise, use format like: <code>"Fall, Year 1"</code></li>
-                        </ul>
-                    </li>
-                    <li><strong>Prerequisites (courses that must be taken before this one):</strong>
-                        <ul>
-                            <li>List course numbers separated by commas</li>
-                            <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
-                        </ul>
-                    </li>
-                    <li><strong>Corequisites (courses that must be taken together):</strong>
-                        <ul>
-                            <li>List course numbers separated by commas</li>
-                            <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the spreadsheet</li>
-                        </ul>
-                    </li>
-                    <li><strong>Units</strong>: How many units the course is worth</li>
-                    <li><strong>Difficulty (optional):</strong>
-                        <ul>
-                            <li>1 = easiest, 8 = hardest</li>
-                            <li>If you're unsure, make them all 1</li>
-                        </ul>
-                    </li>
-
-                        
-                </ol>
-                <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨ Pro Tip:</strong> Put your most important courses at the top — the planner uses this order to prioritize!</p>
+                    <p>Replace the sample data with your own courses</p>
+                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨
+                            PLEASE NOTE:</strong> If you have fulfilled a course elsewhere (eg. CC, AP, IB, etc.),
+                        please don't include it in your course list or list it as a prerequisite/corequisite!</p>
+                    <h3><strong>For each course, fill in:</strong></h3>
+                    <ol>
+                        <li><strong>Course Name & Number</strong> (e.g., "CS 101"):</li>
+                        <li><strong>Taken:</strong>
+                            <ul>
+                                <li>Write <code>Not Assigned</code> if you haven't taken it yet</li>
+                                <li>Otherwise, use format like: <code>"Fall, Year 1"</code></li>
+                            </ul>
+                        </li>
+                        <li><strong>Req Satisfied:</strong>
+                            <ul>
+                                <li>The requirement category this course satisfies</li>
+                                <li>Examples: <code>Lower Div</code>, <code>Major Core</code>, <code>5 Elective</code>,
+                                    <code>GE</code>, <code>TB</code>
+                                </li>
+                            </ul>
+                        </li>
+                        <li><strong>Prerequisites (courses that must be taken before this one):</strong>
+                            <ul>
+                                <li>List course numbers separated by commas</li>
+                                <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the
+                                    spreadsheet</li>
+                            </ul>
+                        </li>
+                        <li><strong>Corequisites (courses that must be taken together):</strong>
+                            <ul>
+                                <li>List course numbers separated by commas</li>
+                                <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the
+                                    spreadsheet</li>
+                            </ul>
+                        </li>
+                        <li><strong>Units</strong>: How many units the course is worth</li>
+                    </ol>
+                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨ Pro
+                            Tip:</strong> Put your most important courses at the top — the planner uses this order to
+                        prioritize!</p>
             </div>
-                
+
 
             <div class="instructions-step">
                 <h2>Step 3: Export Your Data</h4>
-                <ol>
-                    <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish to web</strong></li>
-                    <img src="./img/publishtoweb.png" alt="Screenshot showing how to publish your Google Sheet" style="max-width: 60%; margin: 10px 0; border: 1px solid #ccc;">
-                    <li>In the dropdown menu, change from <strong>"Entire Document"</strong> to <strong>"TEMPLATE"</strong></li>
-                    <img src="./img/publishtemplate.png" alt="Screenshot showing how to change the format to HTML" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
-                    <li>In the dropdown menu, change from <strong>"Web page"</strong> to <strong>"Tab-separated values"</strong></li>
-                    <img src="./img/publishastsv.png" alt="Screenshot showing how to change the format to TSV" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
-                    <li>Click <strong>Publish</strong> and copy the generated link</li>
-                    <img src="./img/publishedlink.png" alt="Screenshot showing how to copy the link" style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
-                </ol>
+                    <ol>
+                        <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish
+                                to web</strong></li>
+                        <img src="./img/publishtoweb.png" alt="Screenshot showing how to publish your Google Sheet"
+                            style="max-width: 60%; margin: 10px 0; border: 1px solid #ccc;">
+                        <li>In the dropdown menu, change from <strong>"Entire Document"</strong> to your specific
+                            sheet/tab</li>
+                        <li>In the dropdown menu, change from <strong>"Web page"</strong> to <strong>"Comma-separated
+                                values (.csv)"</strong></li>
+                        <li>Click <strong>Publish</strong> and copy the generated link</li>
+                        <img src="./img/publishedlink.png" alt="Screenshot showing how to copy the link"
+                            style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
+                    </ol>
             </div>
-            
+
             <div class="instructions-step">
                 <h2>Step 4: Connect to Course Planner</h4>
-                <ol>
-                    <li>Paste the copied link into the <strong>Load Course Data</strong> field</li>
-                </ol>
-                <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>Important</strong>: Verify the link ends with <code>output=tsv</code> before submitting</p>
+                    <ol>
+                        <li>Paste the copied link into the <strong>Load Course Data</strong> field</li>
+                    </ol>
+                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;">
+                        <strong>Important</strong>: Verify the link ends with <code>output=csv</code> before submitting
+                    </p>
             </div>
             <h2><em>🎉 Congrats! Your course planner is now ready to go!</em></h2>
 
@@ -144,8 +159,10 @@
                 <!-- Step 1: Configure Course List -->
                 <div class="step-content active" data-step="1">
                     <div class="template-tooltip">
-                        <span class="template-tooltip-text">Input your required course list into the provided template: </span>
-                        <button onclick="openPlannerTemplate()" class="template-tooltip-button" style="padding: 12px 24px; font-size: 16px;">
+                        <span class="template-tooltip-text">Input your required course list into the provided template:
+                        </span>
+                        <button onclick="openPlannerTemplate()" class="template-tooltip-button"
+                            style="padding: 12px 24px; font-size: 16px;">
                             📋 Access Planner Template
                         </button>
                     </div>
@@ -157,16 +174,20 @@
                 <!-- Step 2: Upload List -->
                 <div class="step-content" data-step="2">
                     <div class="input-url-section">
-                        <div class="upload-icon-button" title="Upload TSV file">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <div class="upload-icon-button" title="Upload CSV file">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                 <polyline points="7,10 12,15 17,10"></polyline>
                                 <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
-                            <input type="file" id="quickFileInput" accept=".tsv,.txt" onchange="handleQuickFileSelect(event)" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
+                            <input type="file" id="quickFileInput" accept=".csv,.txt"
+                                onchange="handleQuickFileSelect(event)"
+                                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
                         </div>
                         <span id="fileNameDisplay" class="file-name-display" style="display: none;"></span>
-                        <input type="text" id="dataUrlNew" placeholder="Paste Google Sheet URL or upload file" value="">
+                        <input type="text" id="dataUrlNew" placeholder="Paste Google Sheet CSV URL or upload file"
+                            value="">
                         <button onclick="loadCourseData()" class="load-data-button">
                             <span class="button-icon">🚀</span>
                             Load Data
@@ -182,7 +203,8 @@
                 <div class="step-content" data-step="3">
                     <div class="input-settings-bottom">
                         <div class="setting-group">
-                            <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Semesters to Graduate:</label>
+                            <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Semesters to
+                                Graduate:</label>
                             <select id="quartersToGraduateNew" onchange="updateDynamicSettings()">
                                 <option value="4">2 Years (4 Semesters)</option>
                                 <option value="6">3 Years (6 Semesters)</option>
@@ -190,9 +212,10 @@
                                 <option value="10">5 Years (10 Semesters)</option>
                                 <option value="custom">Custom</option>
                             </select>
-                            <input type="number" id="customQuartersNew" min="4" max="32" value="16" style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter semesters">
+                            <input type="number" id="customQuartersNew" min="4" max="32" value="16"
+                                style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter semesters">
                         </div>
-                        
+
                         <div class="setting-group">
                             <label for="academicSystemNew">Academic System:</label>
                             <select id="academicSystemNew" onchange="updateAcademicSystem()">
@@ -213,13 +236,10 @@
             <!-- YouTube Video -->
             <div class="video-section">
                 <div class="video-container">
-                    <iframe 
-                        src="https://www.youtube.com/embed/qUQWsvibaeo" 
-                        title="Class Planner Tutorial Video" 
-                        frameborder="0" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                        referrerpolicy="strict-origin-when-cross-origin"
-                        allowfullscreen>
+                    <iframe src="https://www.youtube.com/embed/qUQWsvibaeo" title="Class Planner Tutorial Video"
+                        frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen>
                     </iframe>
                 </div>
             </div>
@@ -232,6 +252,14 @@
             </div>
         </div>
 
+        <!-- Requirement Progress Dashboard -->
+        <div class="requirements-dashboard">
+            <h2>📊 Requirement Progress</h2>
+            <div id="requirement-dashboard" class="requirement-progress-container">
+                <!-- Progress bars will be populated here -->
+            </div>
+        </div>
+
         <div class="years-container">
             <div class="years-header">
                 <h2>Academic Plan</h2>
@@ -241,8 +269,9 @@
                 </div>
             </div>
             <div class="plan-features">
-                <p><strong>💡 Quick Tips:</strong> 
-                Drag & drop classes • Auto-plan on demand • Pin classes (📌) to specific quarters • Lock quarters (🔒) to preserve completed terms • Export your plan (📥)
+                <p><strong>💡 Quick Tips:</strong>
+                    Drag & drop classes • Auto-plan on demand • Pin classes (📌) to specific quarters • Lock quarters
+                    (🔒) to preserve completed terms • Export your plan (📥)
                 </p>
             </div>
             <div id="years">
@@ -260,9 +289,10 @@
             </div>
             <div class="settings-content">
                 <div class="settings-section">
-                    <h4>Explicit Planning Configuration</h4>
-                    <p class="settings-description">Override the dynamic calculations with custom values. Leave blank to use dynamic settings.</p>
-                    
+                    <h4>Unit Planning Configuration</h4>
+                    <p class="settings-description">Override the dynamic calculations with custom values. Leave blank to
+                        use dynamic settings.</p>
+
                     <div class="settings-grid">
                         <div class="setting-item">
                             <label for="maxUnits">Max Units per Term</label>
@@ -276,24 +306,14 @@
                             <label for="targetUnits">Target Units per Term</label>
                             <input type="number" id="targetUnits" min="1" max="30" placeholder="Auto">
                         </div>
-                        <div class="setting-item">
-                            <label for="maxDifficulty">Max Difficulty per Term</label>
-                            <input type="number" id="maxDifficulty" min="1" max="50" placeholder="Auto">
-                        </div>
-                        <div class="setting-item">
-                            <label for="targetDifficulty">Target Difficulty per Term</label>
-                            <input type="number" id="targetDifficulty" min="1" max="50" placeholder="Auto">
-                        </div>
                     </div>
-                    
+
                     <div class="current-dynamic-values">
                         <h5>Current Dynamic Values:</h5>
                         <div class="dynamic-values-grid">
                             <span>Min Units: <strong id="currentMinUnits">12</strong></span>
                             <span>Max Units: <strong id="currentMaxUnits">16</strong></span>
                             <span>Target Units: <strong id="currentTargetUnits">14</strong></span>
-                            <span>Max Difficulty: <strong id="currentMaxDifficulty">15</strong></span>
-                            <span>Target Difficulty: <strong id="currentTargetDifficulty">12</strong></span>
                         </div>
                     </div>
                 </div>
@@ -313,7 +333,8 @@
             <p>
                 <a href="https://github.com/daniellehonn/planmycourses" target="_blank" rel="noopener noreferrer">
                     <svg class="github-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                        <path
+                            d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                     </svg>
                     View on GitHub
                 </a>
@@ -322,4 +343,5 @@
     </footer>
 
 </body>
+
 </html>

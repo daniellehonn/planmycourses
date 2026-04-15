@@ -18,16 +18,11 @@ const PLANNING_CONFIG = {
     MAX_UNITS_PER_QUARTER: 16,
     MIN_UNITS_PER_QUARTER: 12,
     TARGET_UNITS_PER_QUARTER: 13,
-    MAX_DIFFICULTY_PER_QUARTER: 15,
-    TARGET_DIFFICULTY_PER_QUARTER: 12,
     MAX_ATTEMPTS_MIN_UNITS: 5,
     SCORING: {
         UNDER_MIN_UNITS_BONUS: 300,
         MEETS_MIN_UNITS_BONUS: 150,
         OVER_MAX_UNITS_PENALTY: 1000,
-        TARGET_DIFFICULTY_BONUS: 100,
-        OVER_TARGET_DIFFICULTY_PENALTY: 30,
-        WELL_BELOW_MAX_DIFFICULTY_BONUS: 20,
         UNITS_DEVIATION_PENALTY: 10,
         LATER_QUARTER_PENALTY: 15
     },
@@ -35,9 +30,7 @@ const PLANNING_CONFIG = {
     overrides: {
         MAX_UNITS_PER_QUARTER: false,
         MIN_UNITS_PER_QUARTER: false,
-        TARGET_UNITS_PER_QUARTER: false,
-        MAX_DIFFICULTY_PER_QUARTER: false,
-        TARGET_DIFFICULTY_PER_QUARTER: false
+        TARGET_UNITS_PER_QUARTER: false
     }
 };
 
@@ -67,11 +60,11 @@ async function loadCourseData() {
         if (hasUploadedFile) {
             // Load from uploaded file
             const file = quickFileInput.files[0];
-            
+
             // Validate file extension
             const fileNameStr = file.name.toLowerCase();
-            if (!fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
-                throw new Error("Please select a TSV file (.tsv or .txt extension)");
+            if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+                throw new Error("Please select a CSV or TSV file (.csv, .tsv, or .txt extension)");
             }
             
             const tsvData = await readFileAsText(file);
@@ -113,8 +106,8 @@ function handleFileSelect(event) {
         
         // Check file extension
         const fileNameStr = file.name.toLowerCase();
-        if (!fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
-            showError("Please select a TSV file (.tsv or .txt extension)");
+        if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+            showError("Please select a CSV or TSV file (.csv, .tsv, or .txt extension)");
             loadFileButton.disabled = true;
             fileInfo.style.display = 'none';
             return;
@@ -178,34 +171,34 @@ async function processTSVData(tsvData) {
         throw new Error('No data found in TSV file');
     }
 
-    // Validate required columns (removed "Required or Optional")
-    const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units', 'Difficulty'];
-    const optionalColumns = ['Taken', 'Corequisites'];
-    
+    // Validate required columns
+    const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units'];
+    const optionalColumns = ['Taken', 'Corequisites', 'Req Satisfied'];
+
     const firstRow = parsedData[0];
     const availableColumns = Object.keys(firstRow);
-    
+
     const missingColumns = requiredColumns.filter(col => !availableColumns.includes(col));
     if (missingColumns.length > 0) {
         throw new Error(`Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}`);
     }
 
     // Parse course data
-    const courseData = parsedData.map((row, index) => ({ 
+    const courseData = parsedData.map((row, index) => ({
         id: row['Course Number'],
         name: row['Course Number'],
         prerequisites: (row['Prerequisites'] && row['Prerequisites'].trim().toLowerCase() !== 'none' && row['Prerequisites'].trim() !== '')
-                     ? row['Prerequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p) 
+                     ? row['Prerequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                      : [],
         corequisites: (row['Corequisites'] && row['Corequisites'].trim().toLowerCase() !== 'none' && row['Corequisites'].trim() !== '')
-                     ? row['Corequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p) 
+                     ? row['Corequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                      : [],
         description: row['Description'],
-        units: parseInt(row['Units']) || 0, 
-        difficulty: parseInt(row['Difficulty']) || 1, 
-        category: "Required", // Default all courses to Required since column was removed
-        taken: row['Taken'] ? row['Taken'].trim() : '', // Add taken column
-        originalOrder: index 
+        units: parseInt(row['Units']) || 0,
+        reqSatisfied: row['Req Satisfied'] ? row['Req Satisfied'].trim() : 'Required', // New column for requirement category
+        category: "Required", // Default all courses to Required
+        taken: row['Taken'] ? row['Taken'].trim() : '',
+        originalOrder: index
     }));
 
     // Validate the parsed data
@@ -351,18 +344,60 @@ function formatValidationErrors(errors) {
     return header + separator + formattedErrors.join('\n\n') + footer;
 }
 
-function parseTSV(tsvText) {
-    const lines = tsvText.trim().split('\n').filter(line => line.trim() !== ''); 
+function parseDelimited(text) {
+    const lines = text.trim().split('\n').filter(line => line.trim() !== '');
     if (lines.length < 1) return [];
-    const headers = lines[0].split('\t').map(h => h.trim());
-    
+
+    // Detect delimiter: check first line for tabs or commas
+    const firstLine = lines[0];
+    const tabCount = (firstLine.match(/\t/g) || []).length;
+    const commaCount = (firstLine.match(/,/g) || []).length;
+
+    const delimiter = tabCount > commaCount ? '\t' : ',';
+
+    // Parse CSV with proper quote handling
+    function parseCSVLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+
+            if (char === '"') {
+                if (inQuotes && line[i + 1] === '"') {
+                    // Escaped quote
+                    current += '"';
+                    i++;
+                } else {
+                    // Toggle quote state
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === delimiter && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        result.push(current.trim());
+        return result;
+    }
+
+    const headers = parseCSVLine(lines[0]);
+
     return lines.slice(1).map(line => {
-        const values = line.split('\t');
+        const values = parseCSVLine(line);
         return headers.reduce((obj, header, index) => {
-            obj[header] = values[index] ? values[index].trim() : '';
+            obj[header] = values[index] || '';
             return obj;
         }, {});
     });
+}
+
+// Keep parseTSV as an alias for backwards compatibility
+function parseTSV(tsvText) {
+    return parseDelimited(tsvText);
 }
 
 function showError(message) {
@@ -396,35 +431,33 @@ function initializeQuarters(numYears = null) {
     if (numYears === null) {
         numYears = calculateRequiredYears();
     }
-    
+
     quartersData = [];
-    
+
     // Define terms based on academic system
-    const termNames = currentAcademicSystem === 'quarter' 
+    const termNames = currentAcademicSystem === 'quarter'
         ? ["Summer", "Fall", "Winter", "Spring"]
         : ["Fall", "Spring"];
-    
+
     for (let i = 0; i < numYears; i++) {
         termNames.forEach(termName => {
             quartersData.push({
                 id: `${termName.toLowerCase()}${i + 1}`,
                 name: `${termName} Year ${i + 1}`,
                 year: i + 1,
-                classes: [], 
+                classes: [],
                 pinnedClasses: [], // Track pinned courses in this quarter
-                units: 0,
-                difficulty: 0
+                units: 0
             });
         });
     }
     const unassignedClassesIds = ALL_CLASSES_DATA.map(c => c.id);
-    quartersData.unshift({ 
+    quartersData.unshift({
         id: "unassigned",
         name: "Unassigned Classes",
         classes: unassignedClassesIds,
         pinnedClasses: [], // Unassigned can't have pinned courses
-        units: 0, 
-        difficulty: 0 
+        units: 0
     });
 }
 
@@ -509,17 +542,16 @@ function renderPlanner() {
                 toggleQuarterLock(quarter.id);
             };
             
-            headerDiv.innerHTML = `<span>${quarter.name.replace(` Year ${i}`, '')}</span> 
+            headerDiv.innerHTML = `<span>${quarter.name.replace(` Year ${i}`, '')}</span>
                                  <div class="quarter-info">
                                      <span class="quarter-units" id="units-${quarter.id}">${quarter.units} units</span>
-                                     <span class="quarter-units" id="difficulty-${quarter.id}">${quarter.difficulty} difficulty</span>
                                  </div>`;
-            
+
             // Add lock button to header
             headerDiv.appendChild(lockButton);
             quarterDiv.appendChild(headerDiv);
-            
-            quarter.classes.sort((aId, bId) => { 
+
+            quarter.classes.sort((aId, bId) => {
                 const classA = findClassById(aId);
                 const classB = findClassById(bId);
                 if(classA && classB) return classA.originalOrder - classB.originalOrder;
@@ -536,9 +568,9 @@ function renderPlanner() {
         yearsContainer.appendChild(yearDiv);
     }
     addDragDropListeners();
-    updateAllUnitCounts(); 
-    updateAllDifficultyCounts(); 
-    validateAllPrerequisites(); 
+    updateAllUnitCounts();
+    updateRequirementProgress(); // Update requirement progress dashboard
+    validateAllPrerequisites();
 }
 
 function createClassCard(classData) {
@@ -579,6 +611,10 @@ function createClassCard(classData) {
     // Create structured tooltip content
     let tooltipContent = `
         <span class="course-title">${classData.description || 'No description available'}</span>
+        <div class="course-req">
+            <span class="req-label">Requirement:</span>
+            <span class="req-value">${classData.reqSatisfied || 'Required'}</span>
+        </div>
         <div class="course-prereqs">
             <span class="prereq-label">Prerequisites:</span>
             <span class="prereq-list">${prereqsText}</span>
@@ -588,8 +624,8 @@ function createClassCard(classData) {
             <span class="coreq-list">${coreqsText}</span>
         </div>
     `;
-    
-    
+
+
     let planningNote = "";
     if (graph[classData.id] && graph[classData.id].unassignedReason) {
         planningNote = graph[classData.id].unassignedReason;
@@ -615,69 +651,125 @@ function createClassCard(classData) {
         handlePinToggle(classData.id);
     };
 
+    // Get category color for the card
+    const categoryColor = getCategoryColor(classData.reqSatisfied);
+
     card.innerHTML = `
         ${classData.name}
-        <span class="units">(${classData.units} units, Diff: <span class="difficulty-value" data-class-id="${classData.id}" data-field="difficulty">${classData.difficulty}</span>)</span>
+        <span class="units">(${classData.units} units)</span>
         <span class="tooltip">${tooltipContent}</span>
     `;
     
     card.appendChild(pinButton);
-    
+
+    // Apply category color based on reqSatisfied
+    if (categoryColor) {
+        card.style.backgroundColor = categoryColor.bg;
+        card.style.borderColor = categoryColor.border;
+        card.style.color = categoryColor.text;
+        // Apply text color to all text elements
+        const textElements = card.querySelectorAll('.units, .tooltip, .course-title, .prereq-label, .coreq-label, .prereq-list, .coreq-list, .planning-note, .req-label, .req-value');
+        textElements.forEach(el => {
+            if (el) el.style.color = categoryColor.text;
+        });
+    }
+
     // Add double-click event listener to the card for editing
     card.addEventListener('dblclick', handleCardDoubleClick);
-    
-    // Apply custom color if set
-    if (classData.color && classData.color !== '#ffffff') {
-        card.style.backgroundColor = classData.color;
-        // Adjust text color for better contrast if background is dark
-        const r = parseInt(classData.color.slice(1, 3), 16);
-        const g = parseInt(classData.color.slice(3, 5), 16);
-        const b = parseInt(classData.color.slice(5, 7), 16);
-        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-        if (brightness < 128) {
-            card.style.color = 'white';
-            card.style.borderColor = '#4b5563';
-            // Apply white text to all text elements for better visibility
-            const textElements = card.querySelectorAll('.units, .difficulty-value, .tooltip, .course-title, .prereq-label, .coreq-label, .prereq-list, .coreq-list, .planning-note');
-            textElements.forEach(el => {
-                if (el) el.style.color = 'white';
-            });
-        } else {
-            // Reset to default colors for light backgrounds
-            card.style.color = '';
-            card.style.borderColor = '';
-            const textElements = card.querySelectorAll('.units, .difficulty-value, .tooltip, .course-title, .prereq-label, .coreq-label, .prereq-list, .coreq-list, .planning-note');
-            textElements.forEach(el => {
-                if (el) el.style.color = '';
-            });
-        }
-    }
-    
+
     return card;
 }
 
-function handleFieldEdit(event) {
-    const span = event.target;
-    const classId = span.dataset.classId;
-    const field = span.dataset.field;
-    const newValue = span.textContent.trim();
-    
-    if (field === 'difficulty') {
-        const newDifficulty = parseInt(newValue);
-        if (isNaN(newDifficulty) || newDifficulty < 1 || newDifficulty > 8) {
-            alert('Difficulty must be a number between 1 and 8');
-            span.textContent = ALL_CLASSES_DATA.find(c => c.id === classId)?.difficulty || 1;
-            return;
-        }
-        
-        // Update the course data
-        const course = ALL_CLASSES_DATA.find(c => c.id === classId);
-        if (course) {
-            course.difficulty = newDifficulty;
-            // Re-render to update calculations
-            renderPlanner();
+// Get color for a requirement category
+function getCategoryColor(reqSatisfied) {
+    if (!reqSatisfied) return null;
+
+    const colors = {
+        'Lower Div': { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
+        'Major Core': { bg: '#f3e8ff', border: '#a855f7', text: '#7c3aed' },
+        '5 Elective': { bg: '#dcfce7', border: '#22c55e', text: '#16a34a' },
+        'Capstone': { bg: '#fef3c7', border: '#f59e0b', text: '#d97706' },
+        'Grad Level': { bg: '#fce7f3', border: '#ec4899', text: '#db2777' },
+        'TB': { bg: '#fef9c3', border: '#eab308', text: '#a16207' },
+        'ST': { bg: '#e0e7ff', border: '#6366f1', text: '#4f46e5' },
+        'GE': { bg: '#fed7aa', border: '#f97316', text: '#ea580c' },
+        'Probability': { bg: '#ccfbf1', border: '#14b8a6', text: '#0d9488' },
+        'Stats & DS Minor': { bg: '#cffafe', border: '#06b6d4', text: '#0891b2' },
+        'Required': { bg: '#f1f5f9', border: '#64748b', text: '#475569' }
+    };
+
+    // Check for partial matches (for categories that might have variations)
+    for (const [key, value] of Object.entries(colors)) {
+        if (reqSatisfied.includes(key)) {
+            return value;
         }
     }
+
+    return null;
+}
+
+// Requirement Progress Dashboard
+function updateRequirementProgress() {
+    // Count courses by requirement category
+    const requirementCategories = {};
+
+    // Get all courses currently in unassigned
+    const unassignedQuarter = getQuarterById('unassigned');
+    const unassignedCourseIds = unassignedQuarter ? unassignedQuarter.classes : [];
+
+    ALL_CLASSES_DATA.forEach(course => {
+        const rawCategory = course.reqSatisfied || 'Required';
+
+        // Split by comma to handle multiple categories (e.g., "Probability, Stats & DS Minor")
+        const categories = rawCategory.split(',').map(c => c.trim()).filter(c => c);
+
+        categories.forEach(category => {
+            if (!requirementCategories[category]) {
+                requirementCategories[category] = { total: 0, assigned: 0 };
+            }
+            requirementCategories[category].total++;
+
+            // Check if course is assigned (not in unassigned)
+            if (!unassignedCourseIds.includes(course.id)) {
+                requirementCategories[category].assigned++;
+            }
+        });
+    });
+
+    // Update the dashboard
+    const dashboardContainer = document.getElementById('requirement-dashboard');
+    if (!dashboardContainer) return;
+
+    let dashboardHTML = '';
+    const sortedCategories = Object.entries(requirementCategories).sort((a, b) => {
+        // Sort by total count descending, then alphabetically
+        if (b[1].total !== a[1].total) return b[1].total - a[1].total;
+        return a[0].localeCompare(b[0]);
+    });
+
+    sortedCategories.forEach(([category, stats]) => {
+        const percentage = stats.total > 0 ? Math.round((stats.assigned / stats.total) * 100) : 0;
+        const color = getCategoryColor(category);
+        const bgColor = color ? color.border : '#6b7280';
+
+        dashboardHTML += `
+            <div class="requirement-item">
+                <div class="requirement-header">
+                    <span class="requirement-name" style="color: ${bgColor}">${category}</span>
+                    <span class="requirement-count">${stats.assigned}/${stats.total}</span>
+                </div>
+                <div class="requirement-bar">
+                    <div class="requirement-progress" style="width: ${percentage}%; background-color: ${bgColor}"></div>
+                </div>
+            </div>
+        `;
+    });
+
+    dashboardContainer.innerHTML = dashboardHTML;
+}
+
+function handleFieldEdit(event) {
+    // No longer needed - difficulty editing removed
 }
 
 
@@ -715,8 +807,8 @@ function showEditModal(course) {
                     <input type="number" id="edit-units" value="${course.units}" min="1" max="10">
                 </div>
                 <div class="edit-form-group">
-                    <label for="edit-difficulty">Difficulty (1-8)</label>
-                    <input type="number" id="edit-difficulty" value="${course.difficulty}" min="1" max="8">
+                    <label for="edit-reqsatisfied">Requirement Category</label>
+                    <input type="text" id="edit-reqsatisfied" value="${course.reqSatisfied || 'Required'}">
                 </div>
                 <div class="edit-form-group">
                     <label for="edit-prerequisites">Prerequisites (comma-separated)</label>
@@ -733,21 +825,21 @@ function showEditModal(course) {
             </form>
         </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
+
     // Handle form submission
     const form = modal.querySelector('#edit-course-form');
     form.addEventListener('submit', (e) => {
         e.preventDefault();
-        
+
         // Update course data
         course.name = document.getElementById('edit-name').value.trim();
         course.description = document.getElementById('edit-description').value.trim();
         course.units = parseInt(document.getElementById('edit-units').value) || course.units;
-        course.difficulty = parseInt(document.getElementById('edit-difficulty').value) || course.difficulty;
+        course.reqSatisfied = document.getElementById('edit-reqsatisfied').value.trim() || 'Required';
         course.color = document.getElementById('edit-color').value;
-        
+
         // Parse prerequisites and corequisites
         const prereqsText = document.getElementById('edit-prerequisites').value.trim();
         course.prerequisites = prereqsText ? prereqsText.split(',').map(p => p.trim()).filter(p => p) : [];
@@ -1089,13 +1181,6 @@ function validateCoursePlacement(classId, targetQuarterId) {
         return { isValid: false, reason: `Would exceed max units (${PLANNING_CONFIG.MAX_UNITS_PER_QUARTER}). Current: ${currentUnits}, Adding: ${course.units}` };
     }
 
-    // Check difficulty limits
-    const currentDifficulty = targetQuarter.difficulty;
-    const newDifficulty = currentDifficulty + (course.difficulty || 1);
-    if (newDifficulty > PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER) {
-        return { isValid: false, reason: `Would exceed max difficulty (${PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER}). Current: ${currentDifficulty}, Adding: ${course.difficulty}` };
-    }
-
     return { isValid: true, reason: '' };
 }
 
@@ -1241,53 +1326,24 @@ function updateAllUnitCounts() {
     });
 }
 
-function updateQuarterDifficulty(quarterId) {
-    const quarter = getQuarterById(quarterId);
-    if (!quarter || quarter.id === 'unassigned') return;
-
-    let totalDifficulty = 0;
-    quarter.classes.forEach(classId => {
-        const classData = findClassById(classId);
-        if (classData) {
-            totalDifficulty += (classData.difficulty || 1); 
-        }
-    });
-    quarter.difficulty = totalDifficulty;
-    
-    const difficultyDisplay = document.getElementById(`difficulty-${quarter.id}`);
-    if (difficultyDisplay) {
-        difficultyDisplay.textContent = `${totalDifficulty} difficulty`;
-    }
-}
-
-function updateAllDifficultyCounts() {
-     quartersData.forEach(q => {
-        if (q.id !== 'unassigned') {
-            updateQuarterDifficulty(q.id);
-        }
-    });
-}
-
 function getAvailableCoursesForPlanning(completedCoursesInPreviousQuarters, coursesAlreadyInCurrentQuarterPlan, allGraphNodes) {
     return Object.values(allGraphNodes)
         .filter(node => {
-            if (node.placed) return false; 
+            if (node.placed) return false;
             if (coursesAlreadyInCurrentQuarterPlan.has(node.course.id)) return false;
             if (isPinnedCourse(node.course.id)) return false; // Exclude pinned courses from auto-planning
             return node.prerequisites.every(prereqId => completedCoursesInPreviousQuarters.has(prereqId) || !graph[prereqId] /* allow if prereq isn't a core plannable course in graph */);
         })
         .sort((nodeA, nodeB) => {
+            // Sort by original order first
             if (nodeA.originalOrder !== nodeB.originalOrder) {
                 return nodeA.originalOrder - nodeB.originalOrder;
             }
+            // Then by number of dependents (courses that depend on this one)
             if (nodeB.dependents.length !== nodeA.dependents.length) {
                 return nodeB.dependents.length - nodeA.dependents.length;
             }
-            const diffA = nodeA.course.difficulty || 1;
-            const diffB = nodeB.course.difficulty || 1;
-            if (diffA !== diffB) {
-                return diffA - diffB;
-            }
+            // Finally alphabetically
             return nodeA.course.id.localeCompare(nodeB.course.id);
         });
 }
@@ -1362,7 +1418,6 @@ function resetQuartersForPlanning() {
             // Only reset unlocked quarters
             quarter.classes = [];
             quarter.units = 0;
-            quarter.difficulty = 0;
             // Keep pinnedClasses array but clear it for now
             quarter.pinnedClasses = [];
         } else if (quarter.id !== 'unassigned' && isQuarterLocked(quarter.id)) {
@@ -1387,7 +1442,6 @@ function resetQuartersForPlanning() {
                 const classData = findClassById(classId);
                 if (classData) {
                     quarter.units += classData.units;
-                    quarter.difficulty += (classData.difficulty || 1);
                 }
             });
         }
@@ -1403,13 +1457,12 @@ function getAcademicQuartersForPlanning() {
 }
 
 function canPlaceCourseInQuarter(course, quarter) {
-    return quarter.units + course.units <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER &&
-           quarter.difficulty + (course.difficulty || 1) <= PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
+    return quarter.units + course.units <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
 }
 
 function canPlaceCourseInQuarterForPlanning(course, quarter) {
     // For planning purposes, we need to check if there's room considering pinned courses
-    // are already placed and counted in quarter.units and quarter.difficulty
+    // are already placed and counted in quarter.units
     return canPlaceCourseInQuarter(course, quarter);
 }
 
@@ -1418,7 +1471,6 @@ function addCourseToQuarter(course, quarter, courseNode, coursesInQuarter) {
     courseNode.placed = true;
     coursesInQuarter.add(course.id);
     quarter.units += course.units;
-    quarter.difficulty += (course.difficulty || 1);
 }
 
 function primaryCoursePlacement(quarter, completedCourses, coursesInQuarter, graph) {
@@ -1494,12 +1546,11 @@ function secondaryCoursePlacement(quarter, completedCourses, coursesInQuarter, g
 }
 
 function tertiaryCoursePlacement(quarter, completedCourses, coursesInQuarter, graph) {
-    // Third phase: Fill quarters to max units even if difficulty is high
-    // This helps utilize available capacity when difficulty constraints are blocking placement
-    
+    // Third phase: Fill quarters to max units to maximize capacity utilization
+
     let attempts = 0;
     const maxAttempts = 10;
-    
+
     while (quarter.units < PLANNING_CONFIG.MAX_UNITS_PER_QUARTER && attempts < maxAttempts) {
         const availableForFill = getAvailableCoursesForPlanning(
             completedCourses,
@@ -1512,10 +1563,10 @@ function tertiaryCoursePlacement(quarter, completedCourses, coursesInQuarter, gr
         let courseAddedToFill = false;
         for (const courseNode of availableForFill) {
             const course = courseNode.course;
-            
-            // Only check units constraint, ignore difficulty for this phase
+
+            // Only check units constraint
             const wouldExceedUnits = quarter.units + course.units > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
-            
+
             if (!wouldExceedUnits && !coursesInQuarter.has(course.id)) {
                 addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
                 courseAddedToFill = true;
@@ -1529,7 +1580,6 @@ function tertiaryCoursePlacement(quarter, completedCourses, coursesInQuarter, gr
 
 function calculateQuarterScore(quarter, course, quarterIndex) {
     const newQuarterUnits = quarter.units + course.units;
-    const newQuarterDifficulty = quarter.difficulty + (course.difficulty || 1);
     let score = 0;
 
     // Units scoring
@@ -1542,20 +1592,9 @@ function calculateQuarterScore(quarter, course, quarterIndex) {
         score -= PLANNING_CONFIG.SCORING.OVER_MAX_UNITS_PENALTY;
     }
 
-    // Difficulty scoring
-    if (newQuarterDifficulty <= PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER) {
-        score += PLANNING_CONFIG.SCORING.TARGET_DIFFICULTY_BONUS;
-    } else {
-        score -= (newQuarterDifficulty - PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER) * PLANNING_CONFIG.SCORING.OVER_TARGET_DIFFICULTY_PENALTY;
-    }
-
-    if (newQuarterDifficulty < PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER - 3) {
-        score += PLANNING_CONFIG.SCORING.WELL_BELOW_MAX_DIFFICULTY_BONUS;
-    }
-
     // Target units deviation penalty
     score -= Math.abs(newQuarterUnits - PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER) * PLANNING_CONFIG.SCORING.UNITS_DEVIATION_PENALTY;
-    
+
     // Later quarter penalty
     score -= quarterIndex * PLANNING_CONFIG.SCORING.LATER_QUARTER_PENALTY;
 
@@ -1620,8 +1659,9 @@ function sortUnplacedCourses(unplacedCourseNodes, graph) {
         const aPrereqsUnmet = a.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
         const bPrereqsUnmet = b.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
         if (aPrereqsUnmet !== bPrereqsUnmet) return aPrereqsUnmet - bPrereqsUnmet;
-        
-        return (a.course.difficulty || 1) - (b.course.difficulty || 1);
+
+        // Sort by original order as fallback
+        return a.originalOrder - b.originalOrder;
     });
 }
 
@@ -1632,57 +1672,50 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
             prereqDetail = `Prereq. ${prereqId} not scheduled.`;
             break;
         }
-        
+
         const prereqCourseData = findClassById(prereqId);
         if (!prereqCourseData && !graph[prereqId]) {
             prereqDetail = `Prereq. ${prereqId} missing from data.`;
             break;
         }
     }
-    
+
     if (prereqDetail) {
         return prereqDetail;
     }
-    
-    // Check if it's a capacity issue (units or difficulty)
+
+    // Check if it's a capacity issue (units)
     const course = courseNode.course;
     let hasUnitsCapacity = false;
-    let hasDifficultyCapacity = false;
-    
+
     // Include summer courses as completed
-    const summerQuarters = quartersData.filter(q => 
+    const summerQuarters = quartersData.filter(q =>
         q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
     );
     let tempCompleted = new Set();
     summerQuarters.forEach(summerQuarter => {
         summerQuarter.classes.forEach(courseId => tempCompleted.add(courseId));
     });
-    
+
     // Check each quarter to see what's blocking placement
     for (const quarter of academicQuarters) {
         // Check if prerequisites would be satisfied
         const prereqsSatisfied = checkPrerequisitesSatisfied(courseNode, tempCompleted, graph);
-        
+
         if (prereqsSatisfied) {
             const wouldExceedUnits = quarter.units + course.units > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
-            const wouldExceedDifficulty = quarter.difficulty + (course.difficulty || 1) > PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
-            
+
             if (!wouldExceedUnits) hasUnitsCapacity = true;
-            if (!wouldExceedDifficulty) hasDifficultyCapacity = true;
         }
-        
+
         // Add this quarter's courses to completed for next iteration
         quarter.classes.forEach(c => tempCompleted.add(c));
     }
-    
-    if (hasUnitsCapacity && !hasDifficultyCapacity) {
-        return "Blocked by difficulty constraints. Try increasing max difficulty in Advanced Settings.";
-    } else if (!hasUnitsCapacity && hasDifficultyCapacity) {
+
+    if (!hasUnitsCapacity) {
         return "Blocked by unit capacity. Try increasing max units in Advanced Settings.";
-    } else if (!hasUnitsCapacity && !hasDifficultyCapacity) {
-        return "Blocked by both unit and difficulty constraints.";
     }
-    
+
     return "No suitable quarter (capacity/schedule).";
 }
 
@@ -1770,7 +1803,6 @@ function fallbackCoursePlacement(graph, academicQuarters) {
                             bestQuarter.classes.push(course.id);
                             graph[coreqId].placed = true;
                             bestQuarter.units += course.units;
-                            bestQuarter.difficulty += (course.difficulty || 1);
                         });
                         courseWasPlacedInFallbackPass = true;
                         break;
@@ -1784,7 +1816,6 @@ function fallbackCoursePlacement(graph, academicQuarters) {
                     bestQuarter.classes.push(course.id);
                     courseNode.placed = true;
                     bestQuarter.units += course.units;
-                    bestQuarter.difficulty += (course.difficulty || 1);
                     courseWasPlacedInFallbackPass = true;
                     break;
                 }
@@ -1880,13 +1911,13 @@ function autoPlanCoreCourses() {
             }
         });
 
-        // Primary course placement (respects both units and difficulty constraints)
+        // Primary course placement (respects unit constraints)
         primaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
 
         // Secondary placement to meet minimum units (respects both constraints)
         secondaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
 
-        // Tertiary placement to maximize unit utilization (ignores difficulty constraints)
+        // Tertiary placement to maximize unit utilization
         tertiaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
 
         // Update completed courses (including both pinned and auto-placed)
@@ -1924,41 +1955,44 @@ function downloadPlan() {
         return;
     }
 
-    // Create TSV content without the "Required or Optional" column
-    let tsvContent = "Taken\tCourse Number\tPrerequisites\tCorequisites\tDescription\tUnits\tDifficulty\n";
-    
+    // Create CSV content with new format
+    let csvContent = "Taken,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Units\n";
+
     // Process all courses in their original order
     ALL_CLASSES_DATA.forEach(courseData => {
         // Find which quarter this course is in
         let takenValue = 'Not Assigned';
         const courseQuarter = quartersData.find(q => q.classes.includes(courseData.id));
-        
+
         if (courseQuarter && courseQuarter.id !== 'unassigned') {
             // Convert quarter ID back to "Season, Year X" format
             takenValue = formatQuarterForTaken(courseQuarter.name);
         }
-        
+
         // Format prerequisites
         const prerequisites = courseData.prerequisites.length > 0 ? courseData.prerequisites.join(', ') : 'None';
-        
+
         // Format corequisites
         const corequisites = courseData.corequisites.length > 0 ? courseData.corequisites.join(', ') : 'None';
-        
-        // Escape tabs and newlines in description
-        const description = (courseData.description || '').replace(/\t/g, ' ').replace(/\n/g, ' ').replace(/\r/g, ' ');
-        
-        // Add row to TSV (removed Required or Optional column)
-        tsvContent += `${takenValue}\t${courseData.name}\t${prerequisites}\t${corequisites}\t${description}\t${courseData.units}\t${courseData.difficulty}\n`;
+
+        // Escape quotes and commas in description for CSV
+        const description = (courseData.description || '').replace(/"/g, '""').replace(/,/g, ';');
+
+        // Get requirement satisfied
+        const reqSatisfied = courseData.reqSatisfied || 'Required';
+
+        // Add row to CSV (quoted fields for safety)
+        csvContent += `"${takenValue}","${reqSatisfied}","${courseData.name}","${prerequisites}","${corequisites}","${description}",${courseData.units}\n`;
     });
     
     // Create and download the file
-    const blob = new Blob([tsvContent], { type: 'text/tab-separated-values;charset=utf-8;' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    
+
     if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `course_plan_${new Date().toISOString().split('T')[0]}.tsv`);
+        link.setAttribute('download', `course_plan_${new Date().toISOString().split('T')[0]}.csv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -2003,11 +2037,10 @@ function processTakenCourses() {
                     targetQuarter.classes.push(courseData.id);
                     targetQuarter.pinnedClasses.push(courseData.id);
                     pinnedCourses.add(courseData.id);
-                    
+
                     // Update quarter stats
                     targetQuarter.units += courseData.units;
-                    targetQuarter.difficulty += (courseData.difficulty || 1);
-                    
+
                     console.log(`Successfully placed ${courseData.id} in ${quarterId}`);
                 } else {
                     console.log(`Could not find quarter ${quarterId} for course ${courseData.id}`);
@@ -2060,9 +2093,8 @@ function pinCourse(classId, quarterId) {
         targetQuarter.pinnedClasses.push(classId);
         pinnedCourses.add(classId);
     }
-    
+
     updateAllUnitCounts();
-    updateAllDifficultyCounts();
     validateAllPrerequisites();
     renderPlanner();
 }
@@ -2233,29 +2265,19 @@ function loadCurrentSettings() {
     if (academicSystemSelect) {
         academicSystemSelect.value = currentAcademicSystem;
     }
-    
+
     // Load advanced settings (show current values or empty for dynamic)
     const maxUnitsInput = document.getElementById('maxUnits');
     const minUnitsInput = document.getElementById('minUnits');
     const targetUnitsInput = document.getElementById('targetUnits');
-    const maxDifficultyInput = document.getElementById('maxDifficulty');
-    const targetDifficultyInput = document.getElementById('targetDifficulty');
-    
+
     // Only show values if they are overridden
-    maxUnitsInput.value = PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER ? 
+    maxUnitsInput.value = PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER ?
         PLANNING_CONFIG.MAX_UNITS_PER_QUARTER : '';
-    minUnitsInput.value = PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER ? 
+    minUnitsInput.value = PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER ?
         PLANNING_CONFIG.MIN_UNITS_PER_QUARTER : '';
-    targetUnitsInput.value = PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER ? 
+    targetUnitsInput.value = PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER ?
         PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER : '';
-    maxDifficultyInput.value = PLANNING_CONFIG.overrides.MAX_DIFFICULTY_PER_QUARTER ? 
-        PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER : '';
-    targetDifficultyInput.value = PLANNING_CONFIG.overrides.TARGET_DIFFICULTY_PER_QUARTER ? 
-        PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER : '';
-    
-    // Update dynamic values display
-    const calculated = calculateDynamicSettings();
-    // updateDynamicDisplays(calculated); // Removed - UI elements no longer exist
 }
 
 function saveSettings() {
@@ -2263,13 +2285,11 @@ function saveSettings() {
     const maxUnitsInput = document.getElementById('maxUnits');
     const minUnitsInput = document.getElementById('minUnits');
     const targetUnitsInput = document.getElementById('targetUnits');
-    const maxDifficultyInput = document.getElementById('maxDifficulty');
-    const targetDifficultyInput = document.getElementById('targetDifficulty');
-    
+
     // Update overrides and values
     const newConfig = {};
     const newOverrides = {};
-    
+
     // Max Units
     if (maxUnitsInput.value.trim() !== '') {
         newConfig.MAX_UNITS_PER_QUARTER = parseInt(maxUnitsInput.value);
@@ -2277,7 +2297,7 @@ function saveSettings() {
     } else {
         newOverrides.MAX_UNITS_PER_QUARTER = false;
     }
-    
+
     // Min Units
     if (minUnitsInput.value.trim() !== '') {
         newConfig.MIN_UNITS_PER_QUARTER = parseInt(minUnitsInput.value);
@@ -2285,7 +2305,7 @@ function saveSettings() {
     } else {
         newOverrides.MIN_UNITS_PER_QUARTER = false;
     }
-    
+
     // Target Units
     if (targetUnitsInput.value.trim() !== '') {
         newConfig.TARGET_UNITS_PER_QUARTER = parseInt(targetUnitsInput.value);
@@ -2293,47 +2313,22 @@ function saveSettings() {
     } else {
         newOverrides.TARGET_UNITS_PER_QUARTER = false;
     }
-    
-    // Max Difficulty
-    if (maxDifficultyInput.value.trim() !== '') {
-        newConfig.MAX_DIFFICULTY_PER_QUARTER = parseInt(maxDifficultyInput.value);
-        newOverrides.MAX_DIFFICULTY_PER_QUARTER = true;
-    } else {
-        newOverrides.MAX_DIFFICULTY_PER_QUARTER = false;
-    }
-    
-    // Target Difficulty
-    if (targetDifficultyInput.value.trim() !== '') {
-        newConfig.TARGET_DIFFICULTY_PER_QUARTER = parseInt(targetDifficultyInput.value);
-        newOverrides.TARGET_DIFFICULTY_PER_QUARTER = true;
-    } else {
-        newOverrides.TARGET_DIFFICULTY_PER_QUARTER = false;
-    }
-    
+
     // Validate settings
-    const finalMinUnits = newOverrides.MIN_UNITS_PER_QUARTER ? 
+    const finalMinUnits = newOverrides.MIN_UNITS_PER_QUARTER ?
         newConfig.MIN_UNITS_PER_QUARTER : PLANNING_CONFIG.MIN_UNITS_PER_QUARTER;
-    const finalMaxUnits = newOverrides.MAX_UNITS_PER_QUARTER ? 
+    const finalMaxUnits = newOverrides.MAX_UNITS_PER_QUARTER ?
         newConfig.MAX_UNITS_PER_QUARTER : PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
-    const finalTargetUnits = newOverrides.TARGET_UNITS_PER_QUARTER ? 
+    const finalTargetUnits = newOverrides.TARGET_UNITS_PER_QUARTER ?
         newConfig.TARGET_UNITS_PER_QUARTER : PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER;
-    const finalTargetDifficulty = newOverrides.TARGET_DIFFICULTY_PER_QUARTER ? 
-        newConfig.TARGET_DIFFICULTY_PER_QUARTER : PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER;
-    const finalMaxDifficulty = newOverrides.MAX_DIFFICULTY_PER_QUARTER ? 
-        newConfig.MAX_DIFFICULTY_PER_QUARTER : PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER;
-    
+
     if (finalMinUnits > finalMaxUnits) {
         alert('Minimum units cannot be greater than maximum units.');
         return;
     }
-    
+
     if (finalTargetUnits > finalMaxUnits) {
         alert('Target units cannot be greater than maximum units.');
-        return;
-    }
-    
-    if (finalTargetDifficulty > finalMaxDifficulty) {
-        alert('Target difficulty cannot be greater than maximum difficulty.');
         return;
     }
     
@@ -2359,17 +2354,15 @@ function resetToDefaults() {
     Object.keys(PLANNING_CONFIG.overrides).forEach(key => {
         PLANNING_CONFIG.overrides[key] = false;
     });
-    
+
     // Clear input fields
     document.getElementById('maxUnits').value = '';
     document.getElementById('minUnits').value = '';
     document.getElementById('targetUnits').value = '';
-    document.getElementById('maxDifficulty').value = '';
-    document.getElementById('targetDifficulty').value = '';
-    
+
     // Recalculate dynamic settings
     updateDynamicSettings();
-    
+
     showSuccessMessage('Reset to dynamic settings!');
 }
 
@@ -2549,16 +2542,13 @@ function getCorequisiteGroup(courseId, graph) {
 
 function canPlaceCorequisiteGroup(courseIds, quarter, graph) {
     let totalUnits = 0;
-    let totalDifficulty = 0;
-    
+
     courseIds.forEach(courseId => {
         const course = graph[courseId].course;
         totalUnits += course.units;
-        totalDifficulty += (course.difficulty || 1);
     });
-    
-    return (quarter.units + totalUnits <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER) &&
-           (quarter.difficulty + totalDifficulty <= PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER);
+
+    return (quarter.units + totalUnits <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER);
 }
 
 function placeCorequisiteGroup(courseIds, quarter, graph, coursesInQuarter) {
@@ -2572,57 +2562,47 @@ function placeCorequisiteGroup(courseIds, quarter, graph, coursesInQuarter) {
 
 // Dynamic Settings Functions
 function calculateDynamicSettings() {
-    const quartersToGrad = dynamicSettings.useCustomQuarters ? 
-        dynamicSettings.customQuarters : 
+    const quartersToGrad = dynamicSettings.useCustomQuarters ?
+        dynamicSettings.customQuarters :
         dynamicSettings.quartersToGraduate;
-    
+
     // Calculate academic quarters (excluding summer)
-    const academicQuarters = currentAcademicSystem === 'quarter' ? 
+    const academicQuarters = currentAcademicSystem === 'quarter' ?
         Math.floor(quartersToGrad * 0.75) : // 3/4 of quarters are academic (no summer)
         quartersToGrad; // All semesters are academic
-    
-    // Calculate actual total units and difficulty from loaded course data
+
+    // Calculate actual total units from loaded course data
     let actualTotalUnits = 180; // Default fallback
-    let actualTotalDifficulty = 0;
     let courseCount = 0;
-    
+
     if (ALL_CLASSES_DATA && ALL_CLASSES_DATA.length > 0) {
         // Calculate from actual course data
-        const requiredCourses = ALL_CLASSES_DATA.filter(course => 
+        const requiredCourses = ALL_CLASSES_DATA.filter(course =>
             course.category === "Required" || course.category === "Capstone" || course.category === "External"
         );
-        
+
         actualTotalUnits = requiredCourses.reduce((sum, course) => sum + (course.units || 0), 0);
-        actualTotalDifficulty = requiredCourses.reduce((sum, course) => sum + (course.difficulty || 1), 0);
         courseCount = requiredCourses.length;
-        
+
         // If no required courses found, use all courses
         if (actualTotalUnits === 0) {
             actualTotalUnits = ALL_CLASSES_DATA.reduce((sum, course) => sum + (course.units || 0), 0);
-            actualTotalDifficulty = ALL_CLASSES_DATA.reduce((sum, course) => sum + (course.difficulty || 1), 0);
             courseCount = ALL_CLASSES_DATA.length;
         }
     }
-    
+
     // Calculate units per term based on actual data
     const unitsPerTerm = actualTotalUnits / academicQuarters;
-    
+
     // Dynamic calculations for balanced distribution
     const minUnits = 12; // Hard-set to 12 units
     const maxUnits = Math.min(22, Math.ceil(unitsPerTerm * 1.06)); // Fine-tuned for balanced distribution
     const targetUnits = Math.round(unitsPerTerm);
-    
-    // Difficulty calculations based on actual course difficulty data
-    const difficultyPerTerm = actualTotalDifficulty / academicQuarters;
-    const targetDifficulty = Math.round(difficultyPerTerm);
-    const maxDifficulty = Math.round(difficultyPerTerm * 1.4);
-    
+
     return {
         minUnits,
         maxUnits,
         targetUnits,
-        targetDifficulty,
-        maxDifficulty,
         academicQuarters,
         unitsPerTerm: unitsPerTerm.toFixed(1),
         actualTotalUnits,
@@ -2649,21 +2629,21 @@ function updateDynamicSettings() {
         dynamicSettings.quartersToGraduate = parseInt(quartersSelect.value);
         customInput.style.display = 'none';
     }
-    
+
     // Check if graduation timeline changed
-    const newQuarters = dynamicSettings.useCustomQuarters ? 
-        dynamicSettings.customQuarters : 
+    const newQuarters = dynamicSettings.useCustomQuarters ?
+        dynamicSettings.customQuarters :
         dynamicSettings.quartersToGraduate;
-    
+
     // If timeline changed, reinitialize quarters
     if (newQuarters !== previousQuarters) {
         initializeQuarters();
         renderPlanner();
     }
-    
+
     // Calculate and apply dynamic settings based on actual course data
     const calculated = calculateDynamicSettings();
-    
+
     // Update PLANNING_CONFIG only for non-overridden values
     if (!PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER) {
         PLANNING_CONFIG.MIN_UNITS_PER_QUARTER = calculated.minUnits;
@@ -2674,16 +2654,7 @@ function updateDynamicSettings() {
     if (!PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER) {
         PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER = calculated.targetUnits;
     }
-    if (!PLANNING_CONFIG.overrides.TARGET_DIFFICULTY_PER_QUARTER) {
-        PLANNING_CONFIG.TARGET_DIFFICULTY_PER_QUARTER = calculated.targetDifficulty;
-    }
-    if (!PLANNING_CONFIG.overrides.MAX_DIFFICULTY_PER_QUARTER) {
-        PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER = calculated.maxDifficulty;
-    }
-    
-    // Update UI displays
-    // updateDynamicDisplays(calculated); // Removed - UI elements no longer exist
-    
+
     // Save settings
     saveDynamicSettings();
 }
@@ -2792,29 +2763,25 @@ function finalCleanupPlacement(graph, academicQuarters) {
             // Check if prerequisites are satisfied
             const prereqsSatisfied = checkPrerequisitesSatisfied(courseNode, coursesCompletedBeforeQuarter, graph);
             if (!prereqsSatisfied) continue;
-            
+
             // Calculate available capacity score (higher is better)
-            // NO LONGER CHECK UNITS CONSTRAINT - just prefer quarters with fewer units
-            const difficultyRemaining = Math.max(0, PLANNING_CONFIG.MAX_DIFFICULTY_PER_QUARTER - quarter.difficulty);
-            
-            // Prioritize quarters with fewer current units and more difficulty capacity
+            // Prefer quarters with fewer current units
             // Also prefer earlier quarters (lower qIdx)
-            const capacityScore = (-quarter.units * 2) + (difficultyRemaining * 5) - (qIdx * 1);
-            
+            const capacityScore = (-quarter.units * 2) - (qIdx * 1);
+
             // Accept ANY quarter where prerequisites are satisfied (no unit limit check)
             if (capacityScore > bestScore) {
                 bestScore = capacityScore;
                 bestQuarter = quarter;
             }
         }
-        
+
         // Place the course in the best available quarter (even if it exceeds unit limits)
         if (bestQuarter) {
             bestQuarter.classes.push(course.id);
             courseNode.placed = true;
             bestQuarter.units += course.units;
-            bestQuarter.difficulty += (course.difficulty || 1);
-            
+
             // Clear any unassigned reason since we successfully placed it
             courseNode.unassignedReason = '';
         }
@@ -2861,30 +2828,30 @@ function handleQuickFileSelect(event) {
     const fileInput = event.target;
     const errorMessage = document.getElementById('errorMessage');
     const uploadButton = fileInput.closest('.upload-icon-button');
-    
+
     if (fileInput.files.length > 0) {
         const file = fileInput.files[0];
-        
+
         // Check file extension
         const fileNameStr = file.name.toLowerCase();
-        if (!fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
-            showError("Please select a TSV file (.tsv or .txt extension)");
+        if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+            showError("Please select a CSV or TSV file (.csv, .tsv, or .txt extension)");
             fileInput.value = ''; // Clear the input
             // Remove uploaded state
             if (uploadButton) uploadButton.classList.remove('file-uploaded');
             updateFileNameDisplay(null);
             return;
         }
-        
+
         // Add visual feedback for file upload
         if (uploadButton) uploadButton.classList.add('file-uploaded');
-        
+
         // Update file name display
         updateFileNameDisplay(file.name);
-        
+
         // Clear any existing error messages
         errorMessage.style.display = 'none';
-        
+
         // Don't load the file immediately - wait for Load Data button click
     } else {
         // Remove uploaded state if no file selected

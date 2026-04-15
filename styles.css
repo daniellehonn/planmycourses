@@ -856,6 +856,108 @@ h3 {
 }
 
 /* GitHub Footer */
+/* Requirement Progress Dashboard Styles */
+.requirements-dashboard {
+    background: #ffffff;
+    padding: 24px;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f1f5f9;
+    margin-top: 24px;
+}
+
+.requirements-dashboard h2 {
+    margin: 0 0 20px 0;
+    font-size: 20px;
+    color: #235eb1;
+    font-weight: 600;
+}
+
+.requirement-progress-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.requirement-item {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s ease;
+}
+
+.requirement-item:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.requirement-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.requirement-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.requirement-count {
+    font-size: 13px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.requirement-bar {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.requirement-progress {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    background: linear-gradient(90deg, #3b82f6, #2563eb);
+}
+
+/* Category-specific progress colors */
+.requirement-item[data-category="Lower Div"] .requirement-progress {
+    background: linear-gradient(90deg, #3b82f6, #2563eb);
+}
+
+.requirement-item[data-category="Major Core"] .requirement-progress {
+    background: linear-gradient(90deg, #a855f7, #9333ea);
+}
+
+.requirement-item[data-category="5 Elective"] .requirement-progress {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
+.requirement-item[data-category="Capstone"] .requirement-progress {
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.requirement-item[data-category="Grad Level"] .requirement-progress {
+    background: linear-gradient(90deg, #ec4899, #db2777);
+}
+
+.requirement-item[data-category="TB"] .requirement-progress {
+    background: linear-gradient(90deg, #eab308, #ca8a04);
+}
+
+.requirement-item[data-category="GE"] .requirement-progress {
+    background: linear-gradient(90deg, #f97316, #ea580c);
+}
+
+.requirement-item[data-category*="Minor"] .requirement-progress {
+    background: linear-gradient(90deg, #14b8a6, #0d9488);
+}
+
 .github-footer {
     background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
     color: #e2e8f0;
