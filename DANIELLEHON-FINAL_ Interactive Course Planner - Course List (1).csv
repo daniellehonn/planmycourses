@@ -1,4 +1,4 @@
-Taken,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Units
+Taken,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Difficulty
 "Fall, Year 1",Lower Div,CS 1,None,None,Introduction to department resources and principal topics and key ideas in computer science and computer engineering.,1
 "Fall, Year 1",Lower Div,CS 31,None,None,Introduction to Computer Science I,4
 "Winter, Year 1",Lower Div,CS 32,CS 31,None,Introduction to Computer Science II,4
@@ -11,8 +11,8 @@ Not Assigned,Lower Div,CS M51A,None,None,Logic Design of Digital Systems,4
 Not Assigned,Lower Div,MATH 33B,None,None,Differential Equations.,4
 "Fall, Year 1",Lower Div,MATH 61,None,None,Introduction to Discrete Structures.,4
 "Winter, Year 1",Lower Div,PHYSICS 1A,None,None,Physics for Scientists and Engineers: Mechanics.,5
-Not Assigned,Lower Div,PHYSICS 4AL,PHYSICS 1A,None,Physics Laboratory for Scientists and Engineers: Mechanics.,2
-"Spring, Year 1",Lower Div,PHYSICS 1B,PHYSICS 1A,None,"Physics for Scientists and Engineers: Oscillations, Waves, Electric and Magnetic Fields.",5
+Not Assigned,Lower Div,PHYSICS 4AL,"PHYSICS 1A, PHYSICS 1B",None,Physics Laboratory for Scientists and Engineers: Mechanics.,2
+Not Assigned,Lower Div,PHYSICS 1B,PHYSICS 1A,None,"Physics for Scientists and Engineers: Oscillations, Waves, Electric and Magnetic Fields.",5
 Not Assigned,Lower Div,PHYSICS 1C,PHYSICS 1B,None,"Physics for Scientists and Engineers: Electrodynamics, Optics, and Special Relativity.",5
 Not Assigned,"Probability, Stats & DS Minor",STATS 100A,"MATH 32B, MATH 33A",None,Introduction to Probability,4
 Not Assigned,Major Core,CS 111,"CS 32, CS 33, CS 35L",None,Operating Systems Principles,5
@@ -32,20 +32,20 @@ Not Assigned,5 Elective,CS 188,None,None,Special Courses in Computer Science,4
 Not Assigned,Capstone,CS 130,"CS 111, CS 131",None,Software Engineering,4
 Not Assigned,Grad Level,CS 260,CS 180,None,Machine Learning Algorithms,4
 Not Assigned,Grad Level,CS 263,None,None,Natural Language Processing,4
-Not Assigned,ST,STATS C163,CS M146 or CS 161,None,Generative Data Science,4
+Not Assigned,ST,STATS C163,CS M146,None,Generative Data Science,4
 Not Assigned,"ST, Stats & DS Minor",STATS 100B,None,None,Intro to Mathematical Statistics,4
 Not Assigned,"ST, Stats & DS Minor",STATS 100C,None,None,Linear Model,4
-Not Assigned,TB,TB 1,None,None,Technical Breadth elective course 1,4
+"Spring, Year 1",TB,MGMT 170,None,None,Real Estate Finance and Investments,4
 Not Assigned,TB,TB 2,None,None,Technical Breadth elective course 2,4
 Not Assigned,TB,TB 3,None,None,Technical Breadth elective course 3,4
-Not Assigned,Stats & DS Minor,STATS 10/15,None,None,Introduction to Statistical Reasoning/Introduction to Data Science,5
-Not Assigned,Stats & DS Minor,STATS 20,STATS 10/15,None,Introduction to Statistical Programming with R,4
-Not Assigned,Stats & DS Minor,STATS 101A,STATS 10/15,None,Introduction to Data Analysis and Regression,4
+Not Assigned,Stats & DS Minor,STATS 10,None,None,Introduction to Statistical Reasoning/Introduction to Data Science,5
+Not Assigned,Stats & DS Minor,STATS 20,STATS 10,None,Introduction to Statistical Programming with R,4
+Not Assigned,Stats & DS Minor,STATS 101A,STATS 10,None,Introduction to Data Analysis and Regression,4
 Not Assigned,Stats & DS Minor,STATS 101B,STATS 101A,None,Introduction to Design and Analysis of Experiment,4
-Not Assigned,Stats & DS Minor,STATS 102A,"STATS 20. MATH 33A, STATS 10/15",None,Introduction to Computational Statistics with R,4
+Not Assigned,Stats & DS Minor,STATS 102A,"STATS 20, MATH 33A, STATS 10",None,Introduction to Computational Statistics with R,4
 Not Assigned,Stats & DS Minor,STATS 102B,"STATS 100B, STATS 102A, MATH 33A",None,Introduction to Computation and Optimization for Statistics,4
 "Fall, Year 1",GE,SCAND 50,None,None,(AH-LC) Introduction to Scandinavian Literatures and Cultures,5
-Not Assigned,GE,ART&ARC 10,None,None,(AH-VPA) Exploring Arts Literacy in 21st Century,5
-Not Assigned,GE,FILM&TV 4,None,None,Introduction to Art and Technique of Filmmaking,5
+Not Assigned,GE,GE 1,None,None,(AH-VPA) Exploring Arts Literacy in 21st Century,5
+Not Assigned,GE,GE 2,None,None,Introduction to Art and Technique of Filmmaking,5
 "Winter, Year 1",GE,JAPAN 70,None,None,General Education course in Society and Culture.,5
 "Spring, Year 1",GE,CLASSIC 51B,None,None,(AH-VPA) Art and Architecture of Ancient Rome,5

@@ -265,6 +265,7 @@
                 <h2>Academic Plan</h2>
                 <div class="action-buttons">
                     <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
+                    <button id="settingsButton" onclick="openSettingsModal()">⚙️ Advanced Settings</button>
                     <button id="downloadButton" onclick="downloadPlan()">📥 Export Plan</button>
                 </div>
             </div>
@@ -316,6 +317,16 @@
                             <span>Target Units: <strong id="currentTargetUnits">14</strong></span>
                         </div>
                     </div>
+                </div>
+
+                <div class="settings-section">
+                    <h4>Category Priority</h4>
+                    <p class="settings-description">Drag to reorder. Categories higher in the list are scheduled
+                        first when the planner chooses between available courses. Ties are broken by dependency
+                        depth, then by number of dependents.</p>
+                    <ul id="categoryPriorityList" class="category-priority-list">
+                        <li class="category-priority-empty">Load course data to see categories.</li>
+                    </ul>
                 </div>
 
                 <div class="settings-actions">

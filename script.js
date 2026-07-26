@@ -24,7 +24,8 @@ const PLANNING_CONFIG = {
         MEETS_MIN_UNITS_BONUS: 150,
         OVER_MAX_UNITS_PENALTY: 1000,
         UNITS_DEVIATION_PENALTY: 10,
-        LATER_QUARTER_PENALTY: 15
+        LATER_QUARTER_PENALTY: 15,
+        HEAVY_COURSE_STACKING_PENALTY: 20
     },
     // Track which settings are overridden by user
     overrides: {
@@ -32,6 +33,47 @@ const PLANNING_CONFIG = {
         MIN_UNITS_PER_QUARTER: false,
         TARGET_UNITS_PER_QUARTER: false
     }
+};
+
+// Category priority for planning sort: lower index = scheduled earlier.
+// Populated from data on load; user-reorderable via settings modal.
+let categoryPriority = [];
+let draggedCategoryItem = null;
+
+const DEFAULT_CATEGORY_PRIORITY = [
+    'Major Core',
+    'Capstone',
+    'Lower Div',
+    'External',
+    '5 Elective',
+    'TB',
+    'GE',
+    'Probability, Stats & DS Minor',
+    'Stats & DS Minor',
+    'ST, Stats & DS Minor',
+    'ST',
+    'Grad Level'
+];
+
+// Numeric requirement weights indexed by user-controlled category rank.
+// Position 0 (highest priority) gets the largest weight. The values follow
+// the spec (Major Core=40, Capstone=35, ...) when categories are in default
+// order; drag-reorder reassigns the values to whatever's at each rank.
+const DEFAULT_REQUIREMENT_WEIGHTS_BY_RANK = [40, 35, 30, 28, 24, 20, 18, 12, 8, 5];
+
+// Categories that count as "required" for unlock counting. Everything else
+// (electives, GE, TB, minor, grad) counts as elective.
+const REQUIRED_CATEGORIES = new Set([
+    'Major Core', 'Capstone', 'Lower Div', 'External'
+]);
+
+// Workload configuration for combination scoring
+const WORKLOAD_CONFIG = {
+    MAX_DIFFICULTY_PER_QUARTER: 14,
+    OVERLOAD_PENALTY_PER_UNIT: 10,
+    BALANCED_BONUS: 10,
+    ALL_TECHNICAL_PENALTY: 20,
+    TARGET_COURSE_COUNT: 4
 };
 
 // Helper function to get element by new ID with fallback to old ID
@@ -172,8 +214,8 @@ async function processTSVData(tsvData) {
     }
 
     // Validate required columns
-    const requiredColumns = ['Course Number', 'Prerequisites', 'Description', 'Units'];
-    const optionalColumns = ['Taken', 'Corequisites', 'Req Satisfied'];
+    const requiredColumns = ['Course Number', 'Prerequisites', 'Description'];
+    const optionalColumns = ['Taken', 'Corequisites', 'Req Satisfied', 'Units', 'Difficulty'];
 
     const firstRow = parsedData[0];
     const availableColumns = Object.keys(firstRow);
@@ -181,6 +223,11 @@ async function processTSVData(tsvData) {
     const missingColumns = requiredColumns.filter(col => !availableColumns.includes(col));
     if (missingColumns.length > 0) {
         throw new Error(`Missing required columns: ${missingColumns.join(', ')}. Required columns are: ${requiredColumns.join(', ')}`);
+    }
+
+    // Require at least one unit-like column
+    if (!availableColumns.includes('Units') && !availableColumns.includes('Difficulty')) {
+        throw new Error(`Missing unit column: provide either 'Units' or 'Difficulty'.`);
     }
 
     // Parse course data
@@ -194,7 +241,7 @@ async function processTSVData(tsvData) {
                      ? row['Corequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                      : [],
         description: row['Description'],
-        units: parseInt(row['Units']) || 0,
+        units: parseInt(row['Units']) || parseInt(row['Difficulty']) || 0,
         reqSatisfied: row['Req Satisfied'] ? row['Req Satisfied'].trim() : 'Required', // New column for requirement category
         category: "Required", // Default all courses to Required
         taken: row['Taken'] ? row['Taken'].trim() : '',
@@ -1326,28 +1373,6 @@ function updateAllUnitCounts() {
     });
 }
 
-function getAvailableCoursesForPlanning(completedCoursesInPreviousQuarters, coursesAlreadyInCurrentQuarterPlan, allGraphNodes) {
-    return Object.values(allGraphNodes)
-        .filter(node => {
-            if (node.placed) return false;
-            if (coursesAlreadyInCurrentQuarterPlan.has(node.course.id)) return false;
-            if (isPinnedCourse(node.course.id)) return false; // Exclude pinned courses from auto-planning
-            return node.prerequisites.every(prereqId => completedCoursesInPreviousQuarters.has(prereqId) || !graph[prereqId] /* allow if prereq isn't a core plannable course in graph */);
-        })
-        .sort((nodeA, nodeB) => {
-            // Sort by original order first
-            if (nodeA.originalOrder !== nodeB.originalOrder) {
-                return nodeA.originalOrder - nodeB.originalOrder;
-            }
-            // Then by number of dependents (courses that depend on this one)
-            if (nodeB.dependents.length !== nodeA.dependents.length) {
-                return nodeB.dependents.length - nodeA.dependents.length;
-            }
-            // Finally alphabetically
-            return nodeA.course.id.localeCompare(nodeB.course.id);
-        });
-}
-
 function initializePlanningGraph() {
     const graph = {};
     const coursesToConsiderForPlanning = ALL_CLASSES_DATA
@@ -1360,6 +1385,7 @@ function initializePlanningGraph() {
             prerequisites: course.prerequisites,
             corequisites: course.corequisites,
             dependents: [],
+            dependencyDepth: 0,
             placed: false,
             unassignedReason: '',
             originalOrder: course.originalOrder
@@ -1375,7 +1401,329 @@ function initializePlanningGraph() {
         });
     });
 
+    // Compute dependency depth: longest chain from this course to a leaf dependent.
+    // Courses at the top of long chains (e.g. CS 31 → CS 32 → CS 33 → CS 111) get
+    // scheduled first so they don't get pushed later than necessary.
+    computeDependencyDepth(graph);
+
     return graph;
+}
+
+function computeDependencyDepth(graph) {
+    const memo = new Map();
+    const visiting = new Set();
+
+    function depth(nodeId) {
+        if (memo.has(nodeId)) return memo.get(nodeId);
+        const node = graph[nodeId];
+        if (!node) return 0;
+        if (visiting.has(nodeId)) return 0; // cycle guard
+
+        visiting.add(nodeId);
+        let maxChild = 0;
+        for (const depId of node.dependents) {
+            maxChild = Math.max(maxChild, depth(depId));
+        }
+        visiting.delete(nodeId);
+
+        const d = 1 + maxChild;
+        memo.set(nodeId, d);
+        return d;
+    }
+
+    Object.values(graph).forEach(node => {
+        node.dependencyDepth = depth(node.course.id);
+    });
+}
+
+function syncCategoryPriorityWithData() {
+    if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) return;
+
+    const dataCategories = [...new Set(
+        ALL_CLASSES_DATA.map(c => c.reqSatisfied).filter(c => c)
+    )];
+
+    if (categoryPriority.length === 0) {
+        categoryPriority = getDefaultCategoryPriority(dataCategories);
+        return;
+    }
+
+    // Drop categories no longer present in the data
+    categoryPriority = categoryPriority.filter(c => dataCategories.includes(c));
+    // Append any new categories (in default order then discovery order)
+    const knownNew = DEFAULT_CATEGORY_PRIORITY.filter(c =>
+        dataCategories.includes(c) && !categoryPriority.includes(c)
+    );
+    const unknownNew = dataCategories.filter(c =>
+        !DEFAULT_CATEGORY_PRIORITY.includes(c) && !categoryPriority.includes(c)
+    );
+    categoryPriority = [...categoryPriority, ...knownNew, ...unknownNew];
+}
+
+function getDefaultCategoryPriority(dataCategories) {
+    const known = DEFAULT_CATEGORY_PRIORITY.filter(c => dataCategories.includes(c));
+    const unknown = dataCategories.filter(c => !DEFAULT_CATEGORY_PRIORITY.includes(c));
+    return [...known, ...unknown];
+}
+
+// Derive numeric requirement weights from the current category-priority order.
+// Index 0 (top of the list) gets the largest value; lower ranks decay.
+function deriveRequirementWeights() {
+    const values = [...DEFAULT_REQUIREMENT_WEIGHTS_BY_RANK];
+    while (values.length < categoryPriority.length) {
+        const last = values[values.length - 1];
+        values.push(Math.max(1, last - 3));
+    }
+    const weights = {};
+    categoryPriority.forEach((cat, idx) => {
+        weights[cat] = values[idx] ?? 1;
+    });
+    return weights;
+}
+
+// True if a course counts toward the degree (Major Core, Capstone, etc.).
+// Used for the spec's required-vs-elective unlock split.
+function isRequiredCourse(courseNode) {
+    return courseNode && REQUIRED_CATEGORIES.has(courseNode.course.reqSatisfied);
+}
+
+// Transitive closure of dependents, excluding direct dependents themselves.
+// BFS starting from direct dependents, traversing their dependents, and so on.
+function getIndirectUnlocks(courseId, graph) {
+    const node = graph[courseId];
+    if (!node) return [];
+
+    const direct = new Set(node.dependents);
+    const indirect = new Set();
+    const visited = new Set(node.dependents);
+    const queue = [...node.dependents];
+
+    while (queue.length > 0) {
+        const id = queue.shift();
+        const current = graph[id];
+        if (!current) continue;
+        current.dependents.forEach(d => {
+            if (visited.has(d)) return;
+            visited.add(d);
+            if (!direct.has(d)) indirect.add(d);
+            queue.push(d);
+        });
+    }
+    return Array.from(indirect);
+}
+
+// Spec's weighted priority score:
+//   10·requiredDirect + 6·requiredIndirect + 5·electiveDirect + 3·electiveIndirect
+//   + 8·longestChain + requirementWeight - 2·difficulty
+function computePriorityScore(courseNode, graph, requirementWeights) {
+    const course = courseNode.course;
+
+    const directUnlocks = courseNode.dependents;
+    const indirectUnlocks = getIndirectUnlocks(course.id, graph);
+
+    const directUnlockNodes = directUnlocks.map(id => graph[id]).filter(Boolean);
+    const indirectUnlockNodes = indirectUnlocks.map(id => graph[id]).filter(Boolean);
+
+    const requiredDirect = directUnlockNodes.filter(isRequiredCourse).length;
+    const electiveDirect = directUnlockNodes.length - requiredDirect;
+    const requiredIndirect = indirectUnlockNodes.filter(isRequiredCourse).length;
+    const electiveIndirect = indirectUnlockNodes.length - requiredIndirect;
+
+    const longestChain = courseNode.dependencyDepth;
+    const requirementWeight = requirementWeights[course.reqSatisfied] ?? 1;
+    const difficultyPenalty = (course.units || 0) * 2;
+
+    return (
+        10 * requiredDirect +
+         6 * requiredIndirect +
+         5 * electiveDirect +
+         3 * electiveIndirect +
+         8 * longestChain +
+         requirementWeight -
+         difficultyPenalty
+    );
+}
+
+// Generate all subsets of eligible nodes whose combined units fit under the
+// remaining unit budget for this quarter. Caps subset size at 5 to bound the
+// search (C(N,5) is fine for typical N=8-12 eligible courses).
+function generateUnitFeasibleCombinations(eligible, remainingUnitBudget) {
+    const combos = [];
+    const MAX_COMBO_SIZE = 5;
+
+    function backtrack(start, current, currentUnits) {
+        if (current.length > 0) combos.push([...current]);
+        if (current.length >= MAX_COMBO_SIZE) return;
+
+        for (let i = start; i < eligible.length; i++) {
+            const node = eligible[i];
+            if (currentUnits + node.course.units > remainingUnitBudget) continue;
+            current.push(node);
+            backtrack(i + 1, current, currentUnits + node.course.units);
+            current.pop();
+        }
+    }
+
+    backtrack(0, [], 0);
+    return combos;
+}
+
+// Score a candidate combination for a quarter. Higher is better.
+function scoreCombination(combo, quarter, scores) {
+    if (combo.length === 0) return -Infinity;
+
+    let score = combo.reduce((sum, node) => sum + scores.get(node.course.id), 0);
+
+    const addedUnits = combo.reduce((s, n) => s + n.course.units, 0);
+    const totalUnits = quarter.units + addedUnits;
+
+    // Over-difficulty penalty (uses units as difficulty proxy)
+    if (totalUnits > WORKLOAD_CONFIG.MAX_DIFFICULTY_PER_QUARTER) {
+        score -= (totalUnits - WORKLOAD_CONFIG.MAX_DIFFICULTY_PER_QUARTER)
+            * WORKLOAD_CONFIG.OVERLOAD_PENALTY_PER_UNIT;
+    }
+
+    // Under-min penalty: a small combo that leaves the quarter well below
+    // min units is wasteful (we'd rather fill it).
+    if (totalUnits < PLANNING_CONFIG.MIN_UNITS_PER_QUARTER) {
+        const shortfall = PLANNING_CONFIG.MIN_UNITS_PER_QUARTER - totalUnits;
+        score -= shortfall * 5;
+    }
+
+    // Balance bonus: mix of technical and non-technical courses
+    const techCount = combo.filter(n => isTechnicalCourse(n.course)).length;
+    const nonTechCount = combo.length - techCount;
+    if (techCount >= 2 && nonTechCount >= 1 && combo.length >= 3) {
+        score += WORKLOAD_CONFIG.BALANCED_BONUS;
+    }
+    if (techCount === combo.length && combo.length >= 4) {
+        score -= WORKLOAD_CONFIG.ALL_TECHNICAL_PENALTY;
+    }
+
+    return score;
+}
+
+function isTechnicalCourse(course) {
+    return REQUIRED_CATEGORIES.has(course.reqSatisfied)
+        || course.reqSatisfied === '5 Elective'
+        || course.reqSatisfied === 'ST'
+        || course.reqSatisfied === 'Grad Level';
+}
+
+function loadCategoryPriorityUI() {
+    const list = document.getElementById('categoryPriorityList');
+    if (!list) return;
+
+    syncCategoryPriorityWithData();
+    const weights = deriveRequirementWeights();
+
+    list.innerHTML = '';
+    categoryPriority.forEach((category, index) => {
+        const li = document.createElement('li');
+        li.className = 'category-priority-item';
+        li.draggable = true;
+        li.dataset.category = category;
+
+        const handle = document.createElement('span');
+        handle.className = 'drag-handle';
+        handle.textContent = '⋮⋮';
+
+        const rank = document.createElement('span');
+        rank.className = 'priority-rank';
+        rank.textContent = index + 1;
+
+        const name = document.createElement('span');
+        name.className = 'category-name';
+        name.textContent = category;
+
+        const weight = document.createElement('span');
+        weight.className = 'category-weight';
+        weight.textContent = `weight ${weights[category] ?? 1}`;
+        weight.title = 'Contribution to the priority score for courses in this category. Drag to reorder; the value follows the rank.';
+
+        li.appendChild(handle);
+        li.appendChild(rank);
+        li.appendChild(name);
+        li.appendChild(weight);
+        attachCategoryDragHandlers(li);
+
+        list.appendChild(li);
+    });
+}
+
+function attachCategoryDragHandlers(li) {
+    li.addEventListener('dragstart', (e) => {
+        draggedCategoryItem = li;
+        li.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+
+    li.addEventListener('dragend', () => {
+        li.classList.remove('dragging');
+        draggedCategoryItem = null;
+        // Rebuild priority from current DOM order and refresh rank labels
+        const list = document.getElementById('categoryPriorityList');
+        if (!list) return;
+        const newOrder = Array.from(list.children).map(item => item.dataset.category);
+        categoryPriority = newOrder;
+        Array.from(list.children).forEach((item, idx) => {
+            const rank = item.querySelector('.priority-rank');
+            if (rank) rank.textContent = idx + 1;
+        });
+        persistCategoryPriority();
+    });
+
+    li.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!draggedCategoryItem || draggedCategoryItem === li) return;
+        const list = document.getElementById('categoryPriorityList');
+        const rect = li.getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
+        if (e.clientY < midpoint) {
+            list.insertBefore(draggedCategoryItem, li);
+        } else {
+            list.insertBefore(draggedCategoryItem, li.nextSibling);
+        }
+    });
+}
+
+function persistCategoryPriority() {
+    try {
+        localStorage.setItem('categoryPriority', JSON.stringify(categoryPriority));
+    } catch (e) {
+        // localStorage may be unavailable (private mode); silently ignore
+    }
+}
+
+function loadSavedCategoryPriority() {
+    try {
+        const saved = localStorage.getItem('categoryPriority');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) categoryPriority = parsed;
+        }
+    } catch (e) {
+        // ignore malformed storage
+    }
+}
+
+function checkPlanningFeasibility(academicQuarters, graph) {
+    const unplacedRequiredUnits = Object.values(graph)
+        .filter(node => !node.placed)
+        .reduce((sum, node) => sum + node.course.units, 0);
+
+    const availableCapacity = academicQuarters.reduce(
+        (sum, q) => sum + Math.max(0, PLANNING_CONFIG.MAX_UNITS_PER_QUARTER - q.units),
+        0
+    );
+
+    return {
+        feasible: unplacedRequiredUnits <= availableCapacity,
+        unplacedRequiredUnits,
+        availableCapacity,
+        shortfall: Math.max(0, unplacedRequiredUnits - availableCapacity),
+        academicQuarterCount: academicQuarters.length
+    };
 }
 
 function resetQuartersForPlanning() {
@@ -1456,213 +1804,10 @@ function getAcademicQuartersForPlanning() {
         .sort((a, b) => getQuarterChronologicalOrder(a) - getQuarterChronologicalOrder(b));
 }
 
-function canPlaceCourseInQuarter(course, quarter) {
-    return quarter.units + course.units <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
-}
-
-function canPlaceCourseInQuarterForPlanning(course, quarter) {
-    // For planning purposes, we need to check if there's room considering pinned courses
-    // are already placed and counted in quarter.units
-    return canPlaceCourseInQuarter(course, quarter);
-}
-
-function addCourseToQuarter(course, quarter, courseNode, coursesInQuarter) {
-    quarter.classes.push(course.id);
-    courseNode.placed = true;
-    coursesInQuarter.add(course.id);
-    quarter.units += course.units;
-}
-
-function primaryCoursePlacement(quarter, completedCourses, coursesInQuarter, graph) {
-    while (true) {
-        const availableCourseNodes = getAvailableCoursesForPlanning(
-            completedCourses,
-            coursesInQuarter,
-            graph
-        );
-
-        if (availableCourseNodes.length === 0) break;
-
-        let coursePlacedThisIteration = false;
-        for (const courseNode of availableCourseNodes) {
-            const course = courseNode.course;
-            
-            // Check if this course has corequisites
-            if (courseNode.corequisites.length > 0) {
-                const coreqGroup = getCorequisiteGroup(course.id, graph);
-                
-                // Check if all corequisites in the group are available for placement
-                const allCoreqsAvailable = coreqGroup.every(coreqId => {
-                    const coreqNode = graph[coreqId];
-                    if (!coreqNode || coreqNode.placed) return false;
-                    
-                    // Check if prerequisites are satisfied for each corequisite
-                    return checkPrerequisitesSatisfied(coreqNode, completedCourses, graph);
-                });
-                
-                if (allCoreqsAvailable && canPlaceCorequisiteGroup(coreqGroup, quarter, graph)) {
-                    placeCorequisiteGroup(coreqGroup, quarter, graph, coursesInQuarter);
-                    coursePlacedThisIteration = true;
-                    break;
-                }
-            } else {
-                // Regular single course placement
-                if (canPlaceCourseInQuarterForPlanning(course, quarter)) {
-                    addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
-                    coursePlacedThisIteration = true;
-                    break;
-                }
-            }
-        }
-        if (!coursePlacedThisIteration) break;
-    }
-}
-
-function secondaryCoursePlacement(quarter, completedCourses, coursesInQuarter, graph) {
-    if (quarter.units >= PLANNING_CONFIG.MIN_UNITS_PER_QUARTER) return;
-
-    let attempts = 0;
-    while (quarter.units < PLANNING_CONFIG.MIN_UNITS_PER_QUARTER && attempts < PLANNING_CONFIG.MAX_ATTEMPTS_MIN_UNITS) {
-        const availableForMinFill = getAvailableCoursesForPlanning(
-            completedCourses,
-            coursesInQuarter,
-            graph
-        );
-
-        if (availableForMinFill.length === 0) break;
-
-        let courseAddedToMeetMin = false;
-        for (const courseNode of availableForMinFill) {
-            const course = courseNode.course;
-            if (canPlaceCourseInQuarterForPlanning(course, quarter) && !coursesInQuarter.has(course.id)) {
-                addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
-                courseAddedToMeetMin = true;
-                break;
-            }
-        }
-        if (!courseAddedToMeetMin) break;
-        attempts++;
-    }
-}
-
-function tertiaryCoursePlacement(quarter, completedCourses, coursesInQuarter, graph) {
-    // Third phase: Fill quarters to max units to maximize capacity utilization
-
-    let attempts = 0;
-    const maxAttempts = 10;
-
-    while (quarter.units < PLANNING_CONFIG.MAX_UNITS_PER_QUARTER && attempts < maxAttempts) {
-        const availableForFill = getAvailableCoursesForPlanning(
-            completedCourses,
-            coursesInQuarter,
-            graph
-        );
-
-        if (availableForFill.length === 0) break;
-
-        let courseAddedToFill = false;
-        for (const courseNode of availableForFill) {
-            const course = courseNode.course;
-
-            // Only check units constraint
-            const wouldExceedUnits = quarter.units + course.units > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
-
-            if (!wouldExceedUnits && !coursesInQuarter.has(course.id)) {
-                addCourseToQuarter(course, quarter, courseNode, coursesInQuarter);
-                courseAddedToFill = true;
-                break;
-            }
-        }
-        if (!courseAddedToFill) break;
-        attempts++;
-    }
-}
-
-function calculateQuarterScore(quarter, course, quarterIndex) {
-    const newQuarterUnits = quarter.units + course.units;
-    let score = 0;
-
-    // Units scoring
-    if (quarter.units < PLANNING_CONFIG.MIN_UNITS_PER_QUARTER) {
-        score += PLANNING_CONFIG.SCORING.UNDER_MIN_UNITS_BONUS;
-        if (newQuarterUnits >= PLANNING_CONFIG.MIN_UNITS_PER_QUARTER) {
-            score += PLANNING_CONFIG.SCORING.MEETS_MIN_UNITS_BONUS;
-        }
-    } else if (newQuarterUnits > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER) {
-        score -= PLANNING_CONFIG.SCORING.OVER_MAX_UNITS_PENALTY;
-    }
-
-    // Target units deviation penalty
-    score -= Math.abs(newQuarterUnits - PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER) * PLANNING_CONFIG.SCORING.UNITS_DEVIATION_PENALTY;
-
-    // Later quarter penalty
-    score -= quarterIndex * PLANNING_CONFIG.SCORING.LATER_QUARTER_PENALTY;
-
-    return score;
-}
-
 function checkPrerequisitesSatisfied(courseNode, completedBeforeQuarter, graph) {
-    return courseNode.prerequisites.every(prereqId => 
+    return courseNode.prerequisites.every(prereqId =>
         completedBeforeQuarter.has(prereqId) || !graph[prereqId]
     );
-}
-
-function findBestQuarterForCourse(courseNode, academicQuarters, graph) {
-    const course = courseNode.course;
-    let bestQuarter = null;
-    let bestScore = -Infinity;
-
-    // Get summer courses to include as completed prerequisites
-    const summerQuarters = quartersData.filter(q => 
-        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
-    );
-    const summerCourses = new Set();
-    summerQuarters.forEach(summerQuarter => {
-        summerQuarter.classes.forEach(courseId => summerCourses.add(courseId));
-    });
-
-    for (let qIdx = 0; qIdx < academicQuarters.length; qIdx++) {
-        const potentialQuarter = academicQuarters[qIdx];
-
-        if (!canPlaceCourseInQuarterForPlanning(course, potentialQuarter)) {
-            continue;
-        }
-
-        const coursesCompletedBeforePotentialQuarter = new Set();
-        
-        // Include summer courses as completed
-        summerCourses.forEach(courseId => coursesCompletedBeforePotentialQuarter.add(courseId));
-        
-        // Include courses from previous academic quarters
-        for (let prevQIdx = 0; prevQIdx < qIdx; prevQIdx++) {
-            academicQuarters[prevQIdx].classes.forEach(cId => coursesCompletedBeforePotentialQuarter.add(cId));
-        }
-
-        if (!checkPrerequisitesSatisfied(courseNode, coursesCompletedBeforePotentialQuarter, graph)) {
-            continue;
-        }
-
-        const score = calculateQuarterScore(potentialQuarter, course, qIdx);
-        if (score > bestScore) {
-            bestScore = score;
-            bestQuarter = potentialQuarter;
-        }
-    }
-
-    return bestQuarter;
-}
-
-function sortUnplacedCourses(unplacedCourseNodes, graph) {
-    return unplacedCourseNodes.sort((a, b) => {
-        if (a.originalOrder !== b.originalOrder) return a.originalOrder - b.originalOrder;
-        
-        const aPrereqsUnmet = a.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
-        const bPrereqsUnmet = b.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
-        if (aPrereqsUnmet !== bPrereqsUnmet) return aPrereqsUnmet - bPrereqsUnmet;
-
-        // Sort by original order as fallback
-        return a.originalOrder - b.originalOrder;
-    });
 }
 
 function generateUnassignedReason(courseNode, academicQuarters, graph) {
@@ -1719,131 +1864,6 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
     return "No suitable quarter (capacity/schedule).";
 }
 
-function fallbackCoursePlacement(graph, academicQuarters) {
-    let unplacedCourseNodes = Object.values(graph).filter(node => 
-        !node.placed && (node.course.category === "Required" || node.course.category === "Capstone" || node.course.category === "External")
-    );
-    
-    let fallbackIterations = 0;
-    const MAX_FALLBACK_ITERATIONS = unplacedCourseNodes.length + academicQuarters.length + 5;
-
-    // Get summer courses to include as completed prerequisites
-    const summerQuarters = quartersData.filter(q => 
-        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
-    );
-    const summerCourses = new Set();
-    summerQuarters.forEach(summerQuarter => {
-        summerQuarter.classes.forEach(courseId => summerCourses.add(courseId));
-    });
-
-    while (unplacedCourseNodes.length > 0 && fallbackIterations < MAX_FALLBACK_ITERATIONS) {
-        let courseWasPlacedInFallbackPass = false;
-        unplacedCourseNodes = sortUnplacedCourses(unplacedCourseNodes, graph);
-
-        for (const courseNode of unplacedCourseNodes) {
-            if (courseNode.placed) continue;
-
-            // Check if this course has corequisites
-            if (courseNode.corequisites.length > 0) {
-                const coreqGroup = getCorequisiteGroup(courseNode.course.id, graph);
-                
-                // Check if all corequisites in the group are unplaced
-                const allCoreqsUnplaced = coreqGroup.every(coreqId => {
-                    const coreqNode = graph[coreqId];
-                    return coreqNode && !coreqNode.placed;
-                });
-                
-                if (allCoreqsUnplaced) {
-                    // Find best quarter for the entire corequisite group
-                    let bestQuarter = null;
-                    let bestScore = -Infinity;
-                    
-                    for (let qIdx = 0; qIdx < academicQuarters.length; qIdx++) {
-                        const potentialQuarter = academicQuarters[qIdx];
-                        
-                        if (!canPlaceCorequisiteGroup(coreqGroup, potentialQuarter, graph)) {
-                            continue;
-                        }
-                        
-                        const coursesCompletedBeforePotentialQuarter = new Set();
-                        
-                        // Include summer courses as completed
-                        summerCourses.forEach(courseId => coursesCompletedBeforePotentialQuarter.add(courseId));
-                        
-                        // Include courses from previous academic quarters
-                        for (let prevQIdx = 0; prevQIdx < qIdx; prevQIdx++) {
-                            academicQuarters[prevQIdx].classes.forEach(cId => coursesCompletedBeforePotentialQuarter.add(cId));
-                        }
-                        
-                        // Check if all courses in the group have their prerequisites satisfied
-                        const allPrereqsSatisfied = coreqGroup.every(coreqId => {
-                            const coreqNode = graph[coreqId];
-                            return checkPrerequisitesSatisfied(coreqNode, coursesCompletedBeforePotentialQuarter, graph);
-                        });
-                        
-                        if (allPrereqsSatisfied) {
-                            // Calculate average score for the group
-                            let groupScore = 0;
-                            coreqGroup.forEach(coreqId => {
-                                groupScore += calculateQuarterScore(potentialQuarter, graph[coreqId].course, qIdx);
-                            });
-                            groupScore /= coreqGroup.length;
-                            
-                            if (groupScore > bestScore) {
-                                bestScore = groupScore;
-                                bestQuarter = potentialQuarter;
-                            }
-                        }
-                    }
-                    
-                    if (bestQuarter) {
-                        // Place the entire corequisite group
-                        coreqGroup.forEach(coreqId => {
-                            const course = graph[coreqId].course;
-                            bestQuarter.classes.push(course.id);
-                            graph[coreqId].placed = true;
-                            bestQuarter.units += course.units;
-                        });
-                        courseWasPlacedInFallbackPass = true;
-                        break;
-                    }
-                }
-            } else {
-                // Regular single course fallback placement
-                const bestQuarter = findBestQuarterForCourse(courseNode, academicQuarters, graph);
-                if (bestQuarter) {
-                    const course = courseNode.course;
-                    bestQuarter.classes.push(course.id);
-                    courseNode.placed = true;
-                    bestQuarter.units += course.units;
-                    courseWasPlacedInFallbackPass = true;
-                    break;
-                }
-            }
-        }
-
-        unplacedCourseNodes = Object.values(graph).filter(node => 
-            !node.placed && (node.course.category === "Required" || node.course.category === "Capstone" || node.course.category === "External")
-        );
-
-        if (!courseWasPlacedInFallbackPass && unplacedCourseNodes.length > 0) {
-            unplacedCourseNodes.forEach(node => {
-                if (!node.unassignedReason) {
-                    node.unassignedReason = generateUnassignedReason(node, academicQuarters, graph);
-                }
-            });
-            break;
-        }
-        fallbackIterations++;
-    }
-
-    if (fallbackIterations >= MAX_FALLBACK_ITERATIONS && unplacedCourseNodes.length > 0) {
-        unplacedCourseNodes.forEach(node => {
-            if (!node.unassignedReason) node.unassignedReason = "Max planning iterations reached.";
-        });
-    }
-}
-
 function finalizeUnassignedCourses(graph) {
     const unassignedQuarter = getQuarterById('unassigned');
     unassignedQuarter.classes = ALL_CLASSES_DATA
@@ -1864,76 +1884,119 @@ function autoPlanCoreCourses() {
     const unassignedQuarter = resetQuartersForPlanning();
     if (!unassignedQuarter) return;
 
+    syncCategoryPriorityWithData();
+    const requirementWeights = deriveRequirementWeights();
+
     graph = initializePlanningGraph();
     const academicQuarters = getAcademicQuartersForPlanning();
 
-    // Initialize completed courses with courses pinned in summer quarters
-    let completedCourses = new Set();
-    
-    // Add courses from summer quarters as completed prerequisites
-    const summerQuarters = quartersData.filter(q => 
+    // Summer + locked + pinned courses are pre-placed; their ids count as
+    // completed for prerequisite checks in subsequent quarters.
+    const completed = new Set();
+    const summerQuarters = quartersData.filter(q =>
         q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
     );
-    
-    summerQuarters.forEach(summerQuarter => {
-        summerQuarter.classes.forEach(courseId => {
-            completedCourses.add(courseId);
-            // Mark summer courses as placed in the graph so they won't be auto-planned
-            if (graph[courseId]) {
-                graph[courseId].placed = true;
-            }
-        });
-    });
-    
-    // Mark courses in locked quarters as placed so they won't be auto-planned
-    quartersData.forEach(quarter => {
-        if (quarter.id !== 'unassigned' && isQuarterLocked(quarter.id)) {
-            quarter.classes.forEach(courseId => {
-                if (graph[courseId]) {
-                    graph[courseId].placed = true;
-                }
-                // Also add to completed courses to serve as prerequisites
-                completedCourses.add(courseId);
+    summerQuarters.forEach(q => q.classes.forEach(id => {
+        completed.add(id);
+        if (graph[id]) graph[id].placed = true;
+    }));
+    quartersData.forEach(q => {
+        if (q.id !== 'unassigned' && isQuarterLocked(q.id)) {
+            q.classes.forEach(id => {
+                completed.add(id);
+                if (graph[id]) graph[id].placed = true;
             });
         }
     });
-    
-    // Main planning loop for each quarter
-    for (const quarter of academicQuarters) {
-        let coursesAddedToThisQuarter = new Set();
-        
-        // Add pinned courses to the completed courses tracking for this quarter
-        quarter.pinnedClasses.forEach(courseId => {
-            coursesAddedToThisQuarter.add(courseId);
-            // Mark pinned courses as placed in the graph
-            if (graph[courseId]) {
-                graph[courseId].placed = true;
-            }
+    academicQuarters.forEach(q => {
+        q.pinnedClasses.forEach(id => {
+            if (graph[id]) graph[id].placed = true;
         });
+    });
 
-        // Primary course placement (respects unit constraints)
-        primaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
-
-        // Secondary placement to meet minimum units (respects both constraints)
-        secondaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
-
-        // Tertiary placement to maximize unit utilization
-        tertiaryCoursePlacement(quarter, completedCourses, coursesAddedToThisQuarter, graph);
-
-        // Update completed courses (including both pinned and auto-placed)
-        quarter.classes.forEach(courseId => completedCourses.add(courseId));
+    const feasibility = checkPlanningFeasibility(academicQuarters, graph);
+    if (!feasibility.feasible) {
+        alert(
+            `Course plan is infeasible: ${feasibility.unplacedRequiredUnits} units of required courses ` +
+            `vs ${feasibility.availableCapacity} units of capacity across ${feasibility.academicQuarterCount} quarters ` +
+            `(short by ${feasibility.shortfall} units). Some courses will remain unassigned. ` +
+            `Consider increasing max units or adding quarters in Advanced Settings.`
+        );
     }
 
-    // Fallback placement for remaining courses
-    fallbackCoursePlacement(graph, academicQuarters);
+    // Compute priority scores once — they depend only on graph structure,
+    // not on where courses end up.
+    const scores = new Map();
+    Object.values(graph).forEach(node => {
+        if (!node.placed) {
+            scores.set(node.course.id, computePriorityScore(node, graph, requirementWeights));
+        }
+    });
 
-    // Final cleanup: assign remaining courses to quarters with most available capacity
-    finalCleanupPlacement(graph, academicQuarters);
+    // Quarter-by-quarter combination selection per spec §"Course Selection
+    // Algorithm": for each quarter, find eligible courses, generate unit-
+    // feasible combinations, validate coreqs at the combination level, and
+    // place the highest-scoring valid combination.
+    for (const quarter of academicQuarters) {
+        const remainingBudget = PLANNING_CONFIG.MAX_UNITS_PER_QUARTER - quarter.units;
+        if (remainingBudget <= 0) {
+            quarter.classes.forEach(id => completed.add(id));
+            continue;
+        }
 
-    // Finalize unassigned courses
+        const eligible = Object.values(graph)
+            .filter(node => !node.placed && !completed.has(node.course.id))
+            .filter(node => checkPrerequisitesSatisfied(node, completed, graph))
+            .sort((a, b) => scores.get(b.course.id) - scores.get(a.course.id));
+
+        if (eligible.length === 0) {
+            quarter.classes.forEach(id => completed.add(id));
+            continue;
+        }
+
+        const combos = generateUnitFeasibleCombinations(eligible, remainingBudget);
+        const validCombos = combos.filter(combo => combinationCoreqsSatisfied(combo, completed));
+
+        let bestCombo = [];
+        let bestScore = -Infinity;
+        for (const combo of validCombos) {
+            const comboScore = scoreCombination(combo, quarter, scores);
+            if (comboScore > bestScore) {
+                bestScore = comboScore;
+                bestCombo = combo;
+            }
+        }
+
+        for (const node of bestCombo) {
+            quarter.classes.push(node.course.id);
+            node.placed = true;
+            quarter.units += node.course.units;
+            node.unassignedReason = '';
+        }
+
+        quarter.classes.forEach(id => completed.add(id));
+    }
+
+    // Any course still unplaced after the quarter sweep: generate a reason.
+    Object.values(graph).forEach(node => {
+        if (!node.placed && !node.unassignedReason) {
+            node.unassignedReason = generateUnassignedReason(node, academicQuarters, graph);
+        }
+    });
+
     finalizeUnassignedCourses(graph);
-
     renderPlanner();
+}
+
+// Coreqs are satisfied if each course's coreqs are either already completed
+// or also in the proposed combination.
+function combinationCoreqsSatisfied(combo, completed) {
+    const inCombo = new Set(combo.map(n => n.course.id));
+    return combo.every(node =>
+        node.corequisites.every(coreqId =>
+            completed.has(coreqId) || inCombo.has(coreqId) || !graph[coreqId]
+        )
+    );
 }
 
 function toggleSidebar() {
@@ -2249,9 +2312,10 @@ function toggleSettingsModal() {
 function openSettingsModal() {
     const overlay = document.getElementById('settingsModalOverlay');
     overlay.classList.add('active');
-    
+
     // Load current settings into the form
     loadCurrentSettings();
+    loadCategoryPriorityUI();
 }
 
 function closeSettingsModal() {
@@ -2433,6 +2497,8 @@ function loadSavedSettings() {
     
     // Initialize UI with loaded settings
     initializeDynamicUI();
+
+    loadSavedCategoryPriority();
 }
 
 function initializeDynamicUI() {
@@ -2508,56 +2574,6 @@ function updateAcademicSystemUI() {
         // Update placeholder for custom input
         if (customInput) customInput.placeholder = 'Enter quarters';
     }
-}
-
-// New corequisite handling functions
-function getCorequisiteGroup(courseId, graph) {
-    const visited = new Set();
-    const group = new Set();
-    
-    function collectCorequisites(currentId) {
-        if (visited.has(currentId) || !graph[currentId]) return;
-        
-        visited.add(currentId);
-        group.add(currentId);
-        
-        // Add all corequisites of the current course
-        graph[currentId].corequisites.forEach(coreqId => {
-            if (graph[coreqId] && !visited.has(coreqId)) {
-                collectCorequisites(coreqId);
-            }
-        });
-        
-        // Also check if any other courses have this course as a corequisite
-        Object.values(graph).forEach(node => {
-            if (!visited.has(node.course.id) && node.corequisites.includes(currentId)) {
-                collectCorequisites(node.course.id);
-            }
-        });
-    }
-    
-    collectCorequisites(courseId);
-    return Array.from(group);
-}
-
-function canPlaceCorequisiteGroup(courseIds, quarter, graph) {
-    let totalUnits = 0;
-
-    courseIds.forEach(courseId => {
-        const course = graph[courseId].course;
-        totalUnits += course.units;
-    });
-
-    return (quarter.units + totalUnits <= PLANNING_CONFIG.MAX_UNITS_PER_QUARTER);
-}
-
-function placeCorequisiteGroup(courseIds, quarter, graph, coursesInQuarter) {
-    courseIds.forEach(courseId => {
-        if (!graph[courseId].placed) {
-            const course = graph[courseId].course;
-            addCourseToQuarter(course, quarter, graph[courseId], coursesInQuarter);
-        }
-    });
 }
 
 // Dynamic Settings Functions
@@ -2707,85 +2723,6 @@ function updateAcademicSystem() {
 function saveDynamicSettings() {
     localStorage.setItem('dynamicSettings', JSON.stringify(dynamicSettings));
     localStorage.setItem('planningConfig', JSON.stringify(PLANNING_CONFIG));
-}
-
-function finalCleanupPlacement(graph, academicQuarters) {
-    // Final phase: Assign any remaining unassigned courses to quarters with most available capacity
-    // This runs after all other placement attempts and doesn't change existing assignments
-    // DISREGARDS MAX UNITS - will place courses even if they exceed normal unit limits
-    
-    const unplacedCourses = Object.values(graph).filter(node => 
-        !node.placed && (node.course.category === "Required" || node.course.category === "Capstone" || node.course.category === "External")
-    );
-    
-    if (unplacedCourses.length === 0) return;
-    
-    // Include summer courses as completed prerequisites
-    const summerQuarters = quartersData.filter(q => 
-        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
-    );
-    const summerCourses = new Set();
-    summerQuarters.forEach(summerQuarter => {
-        summerQuarter.classes.forEach(courseId => summerCourses.add(courseId));
-    });
-    
-    // Sort unplaced courses by priority (original order, then by prerequisites)
-    const sortedUnplacedCourses = unplacedCourses.sort((a, b) => {
-        if (a.originalOrder !== b.originalOrder) return a.originalOrder - b.originalOrder;
-        
-        const aPrereqsUnmet = a.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
-        const bPrereqsUnmet = b.prerequisites.filter(pId => graph[pId] && !graph[pId].placed).length;
-        return aPrereqsUnmet - bPrereqsUnmet;
-    });
-    
-    for (const courseNode of sortedUnplacedCourses) {
-        if (courseNode.placed) continue; // Skip if already placed
-        
-        const course = courseNode.course;
-        let bestQuarter = null;
-        let bestScore = -Infinity;
-        
-        // Check each quarter to find the best fit
-        for (let qIdx = 0; qIdx < academicQuarters.length; qIdx++) {
-            const quarter = academicQuarters[qIdx];
-            
-            // Check if prerequisites are satisfied for this quarter
-            const coursesCompletedBeforeQuarter = new Set();
-            
-            // Include summer courses as completed
-            summerCourses.forEach(courseId => coursesCompletedBeforeQuarter.add(courseId));
-            
-            // Include courses from previous quarters
-            for (let prevQIdx = 0; prevQIdx < qIdx; prevQIdx++) {
-                academicQuarters[prevQIdx].classes.forEach(cId => coursesCompletedBeforeQuarter.add(cId));
-            }
-            
-            // Check if prerequisites are satisfied
-            const prereqsSatisfied = checkPrerequisitesSatisfied(courseNode, coursesCompletedBeforeQuarter, graph);
-            if (!prereqsSatisfied) continue;
-
-            // Calculate available capacity score (higher is better)
-            // Prefer quarters with fewer current units
-            // Also prefer earlier quarters (lower qIdx)
-            const capacityScore = (-quarter.units * 2) - (qIdx * 1);
-
-            // Accept ANY quarter where prerequisites are satisfied (no unit limit check)
-            if (capacityScore > bestScore) {
-                bestScore = capacityScore;
-                bestQuarter = quarter;
-            }
-        }
-
-        // Place the course in the best available quarter (even if it exceeds unit limits)
-        if (bestQuarter) {
-            bestQuarter.classes.push(course.id);
-            courseNode.placed = true;
-            bestQuarter.units += course.units;
-
-            // Clear any unassigned reason since we successfully placed it
-            courseNode.unassignedReason = '';
-        }
-    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
