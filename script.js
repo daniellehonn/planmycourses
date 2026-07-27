@@ -1708,8 +1708,9 @@ function loadSavedCategoryPriority() {
 }
 
 function checkPlanningFeasibility(academicQuarters, graph) {
-    const unplacedRequiredUnits = Object.values(graph)
-        .filter(node => !node.placed)
+    const unplacedNodes = Object.values(graph).filter(node => !node.placed);
+
+    const unplacedRequiredUnits = unplacedNodes
         .reduce((sum, node) => sum + node.course.units, 0);
 
     const availableCapacity = academicQuarters.reduce(
@@ -1717,12 +1718,26 @@ function checkPlanningFeasibility(academicQuarters, graph) {
         0
     );
 
+    // A chain of N unplaced, prerequisite-linked courses needs at least N
+    // separate quarters no matter how much unit budget is available —
+    // dependencyDepth already measures each node's own remaining downstream
+    // chain length, so the max over unplaced nodes is the binding constraint.
+    const minQuartersForLongestChain = unplacedNodes.reduce(
+        (max, node) => Math.max(max, node.dependencyDepth), 0
+    );
+
+    const unitsFeasible = unplacedRequiredUnits <= availableCapacity;
+    const timelineFeasible = minQuartersForLongestChain <= academicQuarters.length;
+
     return {
-        feasible: unplacedRequiredUnits <= availableCapacity,
+        feasible: unitsFeasible && timelineFeasible,
         unplacedRequiredUnits,
         availableCapacity,
         shortfall: Math.max(0, unplacedRequiredUnits - availableCapacity),
-        academicQuarterCount: academicQuarters.length
+        academicQuarterCount: academicQuarters.length,
+        minQuartersForLongestChain,
+        unitsFeasible,
+        timelineFeasible
     };
 }
 
@@ -1916,11 +1931,22 @@ function autoPlanCoreCourses() {
 
     const feasibility = checkPlanningFeasibility(academicQuarters, graph);
     if (!feasibility.feasible) {
+        const reasons = [];
+        if (!feasibility.unitsFeasible) {
+            reasons.push(
+                `${feasibility.unplacedRequiredUnits} units of required courses vs ${feasibility.availableCapacity} ` +
+                `units of capacity across ${feasibility.academicQuarterCount} quarters (short by ${feasibility.shortfall} units)`
+            );
+        }
+        if (!feasibility.timelineFeasible) {
+            reasons.push(
+                `the longest prerequisite chain needs ${feasibility.minQuartersForLongestChain} quarters but only ` +
+                `${feasibility.academicQuarterCount} remain before your target graduation date`
+            );
+        }
         alert(
-            `Course plan is infeasible: ${feasibility.unplacedRequiredUnits} units of required courses ` +
-            `vs ${feasibility.availableCapacity} units of capacity across ${feasibility.academicQuarterCount} quarters ` +
-            `(short by ${feasibility.shortfall} units). Some courses will remain unassigned. ` +
-            `Consider increasing max units or adding quarters in Advanced Settings.`
+            `Course plan is infeasible: ${reasons.join('; ')}. Some courses will remain unassigned. ` +
+            `Consider increasing max units, adding quarters, or extending your target graduation date in Advanced Settings.`
         );
     }
 
