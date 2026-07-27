@@ -320,6 +320,22 @@
                 </div>
 
                 <div class="settings-section">
+                    <h4>Planning Speed</h4>
+                    <p class="settings-description">Fastest packs more units per quarter to graduate sooner;
+                        Balanced (default) spreads workload more evenly across quarters.</p>
+                    <div class="planning-speed-toggle">
+                        <label class="speed-option">
+                            <input type="radio" name="planningSpeed" id="planningSpeedBalanced" value="balanced" checked onchange="updatePlanningSpeedToggleUI()">
+                            <span>Balanced</span>
+                        </label>
+                        <label class="speed-option">
+                            <input type="radio" name="planningSpeed" id="planningSpeedFastest" value="fastest" onchange="updatePlanningSpeedToggleUI()">
+                            <span>Fastest</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-section">
                     <h4>Category Priority</h4>
                     <p class="settings-description">Drag to reorder. Categories higher in the list are scheduled
                         first when the planner chooses between available courses. Ties are broken by dependency

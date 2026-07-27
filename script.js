@@ -76,6 +76,33 @@ const WORKLOAD_CONFIG = {
     TARGET_COURSE_COUNT: 4
 };
 
+// Planning speed: 'balanced' (default) spreads workload evenly; 'fastest'
+// packs more units per quarter to graduate sooner by raising the unit cap
+// and softening the overload/all-technical penalties below.
+let planningSpeed = 'balanced';
+
+const FASTEST_MODE_CONFIG = {
+    MAX_UNITS_BONUS: 4,
+    MAX_DIFFICULTY_BONUS: 4,
+    OVERLOAD_PENALTY_MULTIPLIER: 0.4,
+    ALL_TECHNICAL_PENALTY_MULTIPLIER: 0.25
+};
+
+function getEffectiveMaxUnitsPerQuarter() {
+    return PLANNING_CONFIG.MAX_UNITS_PER_QUARTER +
+        (planningSpeed === 'fastest' ? FASTEST_MODE_CONFIG.MAX_UNITS_BONUS : 0);
+}
+
+function getEffectiveWorkloadConfig() {
+    if (planningSpeed !== 'fastest') return WORKLOAD_CONFIG;
+    return {
+        ...WORKLOAD_CONFIG,
+        MAX_DIFFICULTY_PER_QUARTER: WORKLOAD_CONFIG.MAX_DIFFICULTY_PER_QUARTER + FASTEST_MODE_CONFIG.MAX_DIFFICULTY_BONUS,
+        OVERLOAD_PENALTY_PER_UNIT: WORKLOAD_CONFIG.OVERLOAD_PENALTY_PER_UNIT * FASTEST_MODE_CONFIG.OVERLOAD_PENALTY_MULTIPLIER,
+        ALL_TECHNICAL_PENALTY: WORKLOAD_CONFIG.ALL_TECHNICAL_PENALTY * FASTEST_MODE_CONFIG.ALL_TECHNICAL_PENALTY_MULTIPLIER
+    };
+}
+
 // Helper function to get element by new ID with fallback to old ID
 function getElementByIdWithFallback(newId, oldId) {
     return document.getElementById(newId) || document.getElementById(oldId);
@@ -494,7 +521,8 @@ function initializeQuarters(numYears = null) {
                 year: i + 1,
                 classes: [],
                 pinnedClasses: [], // Track pinned courses in this quarter
-                units: 0
+                units: 0,
+                backupOptions: [] // "Next best" courses that didn't make the cut this quarter
             });
         });
     }
@@ -609,6 +637,27 @@ function renderPlanner() {
                     quarterDiv.appendChild(createClassCard(classData));
                 }
             });
+
+            if (quarter.backupOptions && quarter.backupOptions.length > 0) {
+                const backupsDiv = document.createElement('div');
+                backupsDiv.className = 'quarter-backups';
+
+                const label = document.createElement('span');
+                label.className = 'quarter-backups-label';
+                label.textContent = 'Backups:';
+                backupsDiv.appendChild(label);
+
+                quarter.backupOptions.forEach(backup => {
+                    const chip = document.createElement('span');
+                    chip.className = 'quarter-backup-chip';
+                    chip.textContent = backup.name;
+                    chip.title = `Next-best alternative if a placed course here becomes unavailable`;
+                    backupsDiv.appendChild(chip);
+                });
+
+                quarterDiv.appendChild(backupsDiv);
+            }
+
             quartersDiv.appendChild(quarterDiv);
         });
         yearDiv.appendChild(quartersDiv);
@@ -1572,15 +1621,17 @@ function generateUnitFeasibleCombinations(eligible, remainingUnitBudget) {
 function scoreCombination(combo, quarter, scores) {
     if (combo.length === 0) return -Infinity;
 
+    const workloadConfig = getEffectiveWorkloadConfig();
+
     let score = combo.reduce((sum, node) => sum + scores.get(node.course.id), 0);
 
     const addedUnits = combo.reduce((s, n) => s + n.course.units, 0);
     const totalUnits = quarter.units + addedUnits;
 
     // Over-difficulty penalty (uses units as difficulty proxy)
-    if (totalUnits > WORKLOAD_CONFIG.MAX_DIFFICULTY_PER_QUARTER) {
-        score -= (totalUnits - WORKLOAD_CONFIG.MAX_DIFFICULTY_PER_QUARTER)
-            * WORKLOAD_CONFIG.OVERLOAD_PENALTY_PER_UNIT;
+    if (totalUnits > workloadConfig.MAX_DIFFICULTY_PER_QUARTER) {
+        score -= (totalUnits - workloadConfig.MAX_DIFFICULTY_PER_QUARTER)
+            * workloadConfig.OVERLOAD_PENALTY_PER_UNIT;
     }
 
     // Under-min penalty: a small combo that leaves the quarter well below
@@ -1594,10 +1645,10 @@ function scoreCombination(combo, quarter, scores) {
     const techCount = combo.filter(n => isTechnicalCourse(n.course)).length;
     const nonTechCount = combo.length - techCount;
     if (techCount >= 2 && nonTechCount >= 1 && combo.length >= 3) {
-        score += WORKLOAD_CONFIG.BALANCED_BONUS;
+        score += workloadConfig.BALANCED_BONUS;
     }
     if (techCount === combo.length && combo.length >= 4) {
-        score -= WORKLOAD_CONFIG.ALL_TECHNICAL_PENALTY;
+        score -= workloadConfig.ALL_TECHNICAL_PENALTY;
     }
 
     return score;
@@ -1713,8 +1764,9 @@ function checkPlanningFeasibility(academicQuarters, graph) {
     const unplacedRequiredUnits = unplacedNodes
         .reduce((sum, node) => sum + node.course.units, 0);
 
+    const effectiveMaxUnits = getEffectiveMaxUnitsPerQuarter();
     const availableCapacity = academicQuarters.reduce(
-        (sum, q) => sum + Math.max(0, PLANNING_CONFIG.MAX_UNITS_PER_QUARTER - q.units),
+        (sum, q) => sum + Math.max(0, effectiveMaxUnits - q.units),
         0
     );
 
@@ -1964,8 +2016,9 @@ function autoPlanCoreCourses() {
     // feasible combinations, validate coreqs at the combination level, and
     // place the highest-scoring valid combination.
     for (const quarter of academicQuarters) {
-        const remainingBudget = PLANNING_CONFIG.MAX_UNITS_PER_QUARTER - quarter.units;
+        const remainingBudget = getEffectiveMaxUnitsPerQuarter() - quarter.units;
         if (remainingBudget <= 0) {
+            quarter.backupOptions = [];
             quarter.classes.forEach(id => completed.add(id));
             continue;
         }
@@ -1976,6 +2029,7 @@ function autoPlanCoreCourses() {
             .sort((a, b) => scores.get(b.course.id) - scores.get(a.course.id));
 
         if (eligible.length === 0) {
+            quarter.backupOptions = [];
             quarter.classes.forEach(id => completed.add(id));
             continue;
         }
@@ -1999,6 +2053,14 @@ function autoPlanCoreCourses() {
             quarter.units += node.course.units;
             node.unassignedReason = '';
         }
+
+        // Backups: highest-scoring eligible courses that didn't make the cut
+        // this quarter — surfaced in the UI as "next best" alternatives.
+        const bestComboIds = new Set(bestCombo.map(node => node.course.id));
+        quarter.backupOptions = eligible
+            .filter(node => !bestComboIds.has(node.course.id))
+            .slice(0, 3)
+            .map(node => ({ id: node.course.id, name: node.course.name || node.course.id }));
 
         quarter.classes.forEach(id => completed.add(id));
     }
@@ -2368,6 +2430,17 @@ function loadCurrentSettings() {
         PLANNING_CONFIG.MIN_UNITS_PER_QUARTER : '';
     targetUnitsInput.value = PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER ?
         PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER : '';
+
+    const speedRadio = document.querySelector(`input[name="planningSpeed"][value="${planningSpeed}"]`);
+    if (speedRadio) speedRadio.checked = true;
+    updatePlanningSpeedToggleUI();
+}
+
+function updatePlanningSpeedToggleUI() {
+    document.querySelectorAll('.speed-option').forEach(option => {
+        const radio = option.querySelector('input[type="radio"]');
+        option.classList.toggle('active', !!(radio && radio.checked));
+    });
 }
 
 function saveSettings() {
@@ -2425,14 +2498,18 @@ function saveSettings() {
     // Apply settings
     Object.assign(PLANNING_CONFIG, newConfig);
     Object.assign(PLANNING_CONFIG.overrides, newOverrides);
-    
+
+    const checkedSpeedRadio = document.querySelector('input[name="planningSpeed"]:checked');
+    planningSpeed = checkedSpeedRadio ? checkedSpeedRadio.value : 'balanced';
+
     // Recalculate dynamic settings for non-overridden values
     updateDynamicSettings();
-    
+
     // Save to localStorage
     localStorage.setItem('planningConfig', JSON.stringify(PLANNING_CONFIG));
     localStorage.setItem('dynamicSettings', JSON.stringify(dynamicSettings));
-    
+    localStorage.setItem('planningSpeed', planningSpeed);
+
     closeSettingsModal();
     
     // Show success message
@@ -2510,7 +2587,12 @@ function loadSavedSettings() {
             console.warn('Failed to load saved planning configuration');
         }
     }
-    
+
+    const savedPlanningSpeed = localStorage.getItem('planningSpeed');
+    if (savedPlanningSpeed === 'balanced' || savedPlanningSpeed === 'fastest') {
+        planningSpeed = savedPlanningSpeed;
+    }
+
     const savedDynamicSettings = localStorage.getItem('dynamicSettings');
     if (savedDynamicSettings) {
         try {

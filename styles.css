@@ -410,6 +410,35 @@ h3 {
     font-weight: 500;
 }
 
+.quarter-backups {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #e2e8f0;
+}
+
+.quarter-backups-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.quarter-backup-chip {
+    font-size: 11px;
+    font-weight: 500;
+    color: #475569;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    padding: 2px 8px;
+    cursor: default;
+}
+
 .class-card {
     background: #ffffff;
     border: 1px solid #e2e8f0;
@@ -1656,6 +1685,42 @@ h3 {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 16px;
+}
+
+.planning-speed-toggle {
+    display: flex;
+    gap: 8px;
+}
+
+.speed-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+    transition: all 0.2s ease;
+}
+
+.speed-option:hover {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+}
+
+.speed-option input[type="radio"] {
+    display: none;
+}
+
+.speed-option.active,
+.speed-option:has(input:checked) {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
 }
 
 .settings-grid .setting-item {
