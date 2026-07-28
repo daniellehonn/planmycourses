@@ -125,6 +125,9 @@
         <div class="header-section">
             <h1>Interactive Class Planner</h1>
             <div class="header-buttons">
+                <button id="accountButton" class="account-button" onclick="openAccountModal()" title="Account">
+                    <span id="accountButtonLabel">Sign In</span>
+                </button>
                 <button class="help-button" onclick="toggleSidebar()" title="Show setup instructions">
                     📋 Setup Guide
                 </button>
@@ -245,38 +248,147 @@
             </div>
         </div>
 
-        <div class="unassigned-classes-container">
-            <h2>Unassigned Classes</h2>
-            <div id="unassignedClasses" class="unassigned-classes drop-zone">
-                <!-- Class cards will be populated here -->
-            </div>
+        <div class="view-switcher">
+            <button id="viewTabPlanner" class="view-tab active" onclick="switchToView('planner')">Planner</button>
+            <button id="viewTabRaw" class="view-tab" onclick="switchToView('raw')">Raw Data</button>
         </div>
 
-        <!-- Requirement Progress Dashboard -->
-        <div class="requirements-dashboard">
-            <h2>📊 Requirement Progress</h2>
-            <div id="requirement-dashboard" class="requirement-progress-container">
-                <!-- Progress bars will be populated here -->
-            </div>
-        </div>
-
-        <div class="years-container">
-            <div class="years-header">
-                <h2>Academic Plan</h2>
-                <div class="action-buttons">
-                    <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
-                    <button id="settingsButton" onclick="openSettingsModal()">⚙️ Advanced Settings</button>
-                    <button id="downloadButton" onclick="downloadPlan()">📥 Export Plan</button>
+        <div id="plannerView">
+            <div class="unassigned-classes-container">
+                <h2>Unassigned Classes</h2>
+                <div id="unassignedClasses" class="unassigned-classes drop-zone">
+                    <!-- Class cards will be populated here -->
                 </div>
             </div>
-            <div class="plan-features">
-                <p><strong>💡 Quick Tips:</strong>
-                    Drag & drop classes • Auto-plan on demand • Pin classes (📌) to specific quarters • Lock quarters
-                    (🔒) to preserve completed terms • Export your plan (📥)
-                </p>
+
+            <!-- Requirement Progress Dashboard -->
+            <div class="requirements-dashboard">
+                <h2>📊 Requirement Progress</h2>
+                <div id="requirement-dashboard" class="requirement-progress-container">
+                    <!-- Progress bars will be populated here -->
+                </div>
             </div>
-            <div id="years">
-                <!-- Years and Quarters will be populated here -->
+
+            <div class="years-container">
+                <div class="years-header">
+                    <h2>Academic Plan</h2>
+                    <div class="action-buttons">
+                        <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
+                        <button id="settingsButton" onclick="openSettingsModal()">⚙️ Advanced Settings</button>
+                        <button id="downloadButton" onclick="downloadPlan()">📥 Export Plan</button>
+                    </div>
+                </div>
+                <div class="plan-features">
+                    <p><strong>💡 Quick Tips:</strong>
+                        Drag & drop classes • Auto-plan on demand • Pin classes (📌) to specific quarters • Lock quarters
+                        (🔒) to preserve completed terms • Export your plan (📥)
+                    </p>
+                </div>
+                <div id="years">
+                    <!-- Years and Quarters will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <div id="rawDataView" style="display: none;">
+            <div class="raw-data-container">
+                <div class="raw-data-header">
+                    <div>
+                        <h2>Raw Course Data</h2>
+                        <p class="raw-data-description">Edit the imported spreadsheet directly. Changes here are a
+                            snapshot — nothing affects your plan until you apply them.</p>
+                    </div>
+                    <div class="action-buttons">
+                        <div class="column-picker">
+                            <button type="button" id="columnPickerButton" class="secondary-button" onclick="toggleColumnPicker()">Columns</button>
+                            <div id="columnPickerMenu" class="column-picker-menu" style="display: none;">
+                                <label><input type="checkbox" data-col-toggle="taken" checked onchange="handleColumnToggle('taken', this.checked)"> Taken</label>
+                                <label><input type="checkbox" data-col-toggle="reqSatisfied" checked onchange="handleColumnToggle('reqSatisfied', this.checked)"> Req Satisfied</label>
+                                <label><input type="checkbox" data-col-toggle="id" checked onchange="handleColumnToggle('id', this.checked)"> Course Number</label>
+                                <label><input type="checkbox" data-col-toggle="prerequisites" checked onchange="handleColumnToggle('prerequisites', this.checked)"> Prerequisites</label>
+                                <label><input type="checkbox" data-col-toggle="corequisites" checked onchange="handleColumnToggle('corequisites', this.checked)"> Corequisites</label>
+                                <label><input type="checkbox" data-col-toggle="description" checked onchange="handleColumnToggle('description', this.checked)"> Description</label>
+                                <label><input type="checkbox" data-col-toggle="units" checked onchange="handleColumnToggle('units', this.checked)"> Units</label>
+                            </div>
+                        </div>
+                        <button id="addRawRowButton" class="secondary-button" onclick="addRawDataRow()">+ Add Row</button>
+                        <button id="applyRawDataButton" class="primary-button" onclick="applyRawDataToPlanner()">Apply to Planner</button>
+                    </div>
+                </div>
+                <div id="rawDataError" class="error-message"></div>
+                <div class="raw-data-table-scroll">
+                    <table class="raw-data-table">
+                        <thead>
+                            <tr>
+                                <th data-col="enabled" title="Whether this course shows up in the planner">Show</th>
+                                <th data-col="taken">Taken</th>
+                                <th data-col="reqSatisfied">Req Satisfied</th>
+                                <th data-col="id">Course Number</th>
+                                <th data-col="prerequisites">Prerequisites</th>
+                                <th data-col="corequisites">Corequisites</th>
+                                <th data-col="description">Description</th>
+                                <th data-col="units">Units</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="rawDataTableBody">
+                            <!-- Editable rows populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Modal -->
+    <div class="settings-modal-overlay" id="accountModalOverlay" onclick="closeAccountModal()">
+        <div class="settings-modal" onclick="event.stopPropagation()">
+            <div class="settings-header">
+                <h3>Account</h3>
+                <button class="modal-close" onclick="closeAccountModal()">×</button>
+            </div>
+            <div class="settings-content">
+                <div id="accountSignedOutView">
+                    <p class="settings-description">Sign in to save your course list, plan, and settings to your
+                        account. This is optional — the planner works fully without an account, using just your
+                        browser.</p>
+
+                    <div id="accountError" class="error-message"></div>
+
+                    <div class="setting-item">
+                        <label for="accountEmail">Email</label>
+                        <input type="email" id="accountEmail" placeholder="you@example.com" class="account-input" autocomplete="email">
+                    </div>
+                    <div class="setting-item">
+                        <label for="accountPassword">Password</label>
+                        <input type="password" id="accountPassword" placeholder="At least 6 characters" class="account-input" autocomplete="current-password">
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="secondary-button" onclick="handleSignUp()">Create Account</button>
+                        <button class="primary-button" onclick="handleSignIn()">Sign In</button>
+                    </div>
+                </div>
+
+                <div id="accountSignedInView" style="display: none;">
+                    <p class="settings-description">Signed in as <strong id="accountEmailDisplay"></strong></p>
+
+                    <div id="accountStatusMessage" class="account-status-message" style="display: none;"></div>
+
+                    <div class="settings-section">
+                        <h4>Save & Load</h4>
+                        <p class="settings-description">Saves your course list, quarter placements, pins, locks, and
+                            planning settings to your account. Loading replaces what's currently in the planner.</p>
+                        <div class="settings-actions" style="justify-content: flex-start; border-top: none; padding-top: 0;">
+                            <button class="primary-button" onclick="saveToAccount()">Save to Account</button>
+                            <button class="secondary-button" onclick="loadFromAccount()">Load from Account</button>
+                        </div>
+                    </div>
+
+                    <div class="settings-actions">
+                        <button class="secondary-button" onclick="handleSignOut()">Sign Out</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -345,6 +457,16 @@
                     </ul>
                 </div>
 
+                <div class="settings-section">
+                    <h4>Graduation Requirements</h4>
+                    <p class="settings-description">How many courses each category actually needs to graduate.
+                        Leave blank to use however many courses you've listed under that category — set a number to
+                        track real progress (e.g. only 2 of the 5 GE electives you've listed are actually required).</p>
+                    <ul id="requirementTargetsList" class="requirement-targets-list">
+                        <li class="category-priority-empty">Load course data to see categories.</li>
+                    </ul>
+                </div>
+
                 <div class="settings-actions">
                     <button class="secondary-button" onclick="resetToDefaults()">Reset to Dynamic</button>
                     <button class="primary-button" onclick="saveSettings()">Save Settings</button>
@@ -353,6 +475,8 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script src="supabase-config.js"></script>
     <script src="script.js"></script>
 
     <footer class="github-footer">

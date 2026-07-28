@@ -272,6 +272,7 @@ async function processTSVData(tsvData) {
         reqSatisfied: row['Req Satisfied'] ? row['Req Satisfied'].trim() : 'Required', // New column for requirement category
         category: "Required", // Default all courses to Required
         taken: row['Taken'] ? row['Taken'].trim() : '',
+        enabled: true, // Toggled off from the Raw Data view to exclude a course from planning
         originalOrder: index
     }));
 
@@ -526,7 +527,7 @@ function initializeQuarters(numYears = null) {
             });
         });
     }
-    const unassignedClassesIds = ALL_CLASSES_DATA.map(c => c.id);
+    const unassignedClassesIds = ALL_CLASSES_DATA.filter(c => c.enabled !== false).map(c => c.id);
     quartersData.unshift({
         id: "unassigned",
         name: "Unassigned Classes",
@@ -586,7 +587,13 @@ function renderPlanner() {
     for (let i = 1; i <= numYears; i++) {
         const yearDiv = document.createElement('div');
         yearDiv.className = 'year';
-        yearDiv.innerHTML = `<h3>Year ${i}</h3>`;
+        yearDiv.innerHTML = `
+            <div class="year-header-row">
+                <span class="year-tab">YEAR ${String(i).padStart(2, '0')}</span>
+                <h3>Year ${i}</h3>
+                <span class="year-rule"></span>
+            </div>
+        `;
         
         const quartersDiv = document.createElement('div');
         quartersDiv.className = 'quarters';
@@ -669,6 +676,204 @@ function renderPlanner() {
     validateAllPrerequisites();
 }
 
+// Raw Data view — an editable snapshot of ALL_CLASSES_DATA. Nothing here
+// affects the plan until applyRawDataToPlanner() is clicked.
+let rawDataHiddenColumns = new Set();
+
+function loadRawDataColumnPrefs() {
+    try {
+        const saved = localStorage.getItem('rawDataHiddenColumns');
+        if (saved) rawDataHiddenColumns = new Set(JSON.parse(saved));
+    } catch (e) {
+        rawDataHiddenColumns = new Set();
+    }
+}
+
+function toggleColumnPicker() {
+    const menu = document.getElementById('columnPickerMenu');
+    menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
+}
+
+function handleColumnToggle(field, checked) {
+    if (checked) {
+        rawDataHiddenColumns.delete(field);
+    } else {
+        rawDataHiddenColumns.add(field);
+    }
+    localStorage.setItem('rawDataHiddenColumns', JSON.stringify(Array.from(rawDataHiddenColumns)));
+    applyColumnVisibility();
+}
+
+function applyColumnVisibility() {
+    const table = document.querySelector('.raw-data-table');
+    if (table) table.setAttribute('data-hide', Array.from(rawDataHiddenColumns).join(' '));
+
+    document.querySelectorAll('#columnPickerMenu input[data-col-toggle]').forEach(checkbox => {
+        checkbox.checked = !rawDataHiddenColumns.has(checkbox.dataset.colToggle);
+    });
+}
+
+document.addEventListener('click', (e) => {
+    const picker = document.querySelector('.column-picker');
+    const menu = document.getElementById('columnPickerMenu');
+    if (picker && menu && menu.style.display !== 'none' && !picker.contains(e.target)) {
+        menu.style.display = 'none';
+    }
+});
+
+function switchToView(view) {
+    const plannerView = document.getElementById('plannerView');
+    const rawView = document.getElementById('rawDataView');
+    const tabPlanner = document.getElementById('viewTabPlanner');
+    const tabRaw = document.getElementById('viewTabRaw');
+
+    if (view === 'raw') {
+        plannerView.style.display = 'none';
+        rawView.style.display = 'block';
+        tabPlanner.classList.remove('active');
+        tabRaw.classList.add('active');
+        renderRawDataTable();
+        applyColumnVisibility();
+    } else {
+        plannerView.style.display = 'block';
+        rawView.style.display = 'none';
+        tabRaw.classList.remove('active');
+        tabPlanner.classList.add('active');
+    }
+}
+
+function renderRawDataTable() {
+    const tbody = document.getElementById('rawDataTableBody');
+    tbody.innerHTML = '';
+    document.getElementById('rawDataError').style.display = 'none';
+
+    if (ALL_CLASSES_DATA.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 9;
+        td.className = 'raw-data-empty';
+        td.textContent = 'No course data loaded yet. Upload a course list first, or click "+ Add Row" to start from scratch.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+    }
+
+    ALL_CLASSES_DATA.forEach(course => {
+        tbody.appendChild(createRawDataRow({
+            enabled: course.enabled !== false,
+            taken: course.taken || '',
+            reqSatisfied: course.reqSatisfied || '',
+            id: course.id || '',
+            prerequisites: course.prerequisites.join(', '),
+            corequisites: course.corequisites.join(', '),
+            description: course.description || '',
+            units: course.units != null ? String(course.units) : ''
+        }));
+    });
+}
+
+function createRawDataRow(values) {
+    values = values || {};
+    const tr = document.createElement('tr');
+
+    const enabledTd = document.createElement('td');
+    enabledTd.dataset.col = 'enabled';
+    const enabledCheckbox = document.createElement('input');
+    enabledCheckbox.type = 'checkbox';
+    enabledCheckbox.className = 'raw-data-checkbox';
+    enabledCheckbox.dataset.field = 'enabled';
+    enabledCheckbox.checked = values.enabled !== false;
+    enabledCheckbox.title = 'Show this course in the planner';
+    enabledCheckbox.onchange = () => tr.classList.toggle('raw-data-row-disabled', !enabledCheckbox.checked);
+    enabledTd.appendChild(enabledCheckbox);
+    tr.appendChild(enabledTd);
+    if (values.enabled === false) tr.classList.add('raw-data-row-disabled');
+
+    const fields = ['taken', 'reqSatisfied', 'id', 'prerequisites', 'corequisites', 'description', 'units'];
+
+    fields.forEach(field => {
+        const td = document.createElement('td');
+        td.dataset.col = field;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'raw-data-input';
+        input.dataset.field = field;
+        input.value = values[field] || '';
+        td.appendChild(input);
+        tr.appendChild(td);
+    });
+
+    const actionTd = document.createElement('td');
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'raw-data-remove';
+    removeBtn.title = 'Remove row';
+    removeBtn.textContent = '×';
+    removeBtn.onclick = () => tr.remove();
+    actionTd.appendChild(removeBtn);
+    tr.appendChild(actionTd);
+
+    return tr;
+}
+
+function addRawDataRow() {
+    const tbody = document.getElementById('rawDataTableBody');
+    const emptyRow = tbody.querySelector('.raw-data-empty');
+    if (emptyRow) emptyRow.closest('tr').remove();
+    tbody.appendChild(createRawDataRow({ enabled: true, taken: 'Not Assigned', prerequisites: 'None', corequisites: 'None' }));
+}
+
+function applyRawDataToPlanner() {
+    const errorDiv = document.getElementById('rawDataError');
+    errorDiv.style.display = 'none';
+
+    const rows = document.querySelectorAll('#rawDataTableBody tr');
+    const courseData = Array.from(rows)
+        .filter(tr => !tr.querySelector('.raw-data-empty'))
+        .map((tr, index) => {
+            const get = (field) => tr.querySelector(`[data-field="${field}"]`).value.trim();
+            const prereqRaw = get('prerequisites');
+            const coreqRaw = get('corequisites');
+            return {
+                id: get('id'),
+                name: get('id'),
+                prerequisites: (prereqRaw && prereqRaw.toLowerCase() !== 'none')
+                    ? prereqRaw.split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
+                    : [],
+                corequisites: (coreqRaw && coreqRaw.toLowerCase() !== 'none')
+                    ? coreqRaw.split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
+                    : [],
+                description: get('description'),
+                units: parseInt(get('units')) || 0,
+                reqSatisfied: get('reqSatisfied') || 'Required',
+                category: 'Required',
+                taken: get('taken'),
+                enabled: tr.querySelector('[data-field="enabled"]').checked,
+                originalOrder: index
+            };
+        });
+
+    try {
+        validateTSVData(courseData);
+    } catch (e) {
+        errorDiv.textContent = e.message;
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    ALL_CLASSES_DATA = courseData;
+    pinnedCourses.clear();
+    lockedQuarters.clear();
+    graph = {};
+    initializeQuarters();
+    processTakenCourses();
+    updateDynamicSettings();
+    renderPlanner();
+
+    showSuccessMessage('Applied changes to planner!');
+    switchToView('planner');
+}
+
 function createClassCard(classData) {
     const card = document.createElement('div');
     card.className = 'class-card';
@@ -736,10 +941,12 @@ function createClassCard(classData) {
         </div>`;
     }
 
-    // Create pin button
+    // Create pin button (thumbtack icon, filled when pinned)
     const pinButton = document.createElement('button');
     pinButton.className = 'pin-button';
-    pinButton.innerHTML = isPinnedCourse(classData.id) ? '📌' : '📍';
+    pinButton.innerHTML = isPinnedCourse(classData.id)
+        ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 3a1 1 0 0 1 1 1v5.17l2.83 2.83a1 1 0 0 1-.71 1.71H13v6a1 1 0 1 1-2 0v-6H4.88a1 1 0 0 1-.71-1.71L7 9.17V4a1 1 0 0 1 1-1h8z"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 3a1 1 0 0 1 1 1v5.17l2.83 2.83a1 1 0 0 1-.71 1.71H13v6a1 1 0 1 1-2 0v-6H4.88a1 1 0 0 1-.71-1.71L7 9.17V4a1 1 0 0 1 1-1h8z"/></svg>';
     pinButton.title = isPinnedCourse(classData.id) ? 'Unpin course' : 'Pin course';
     pinButton.onclick = (e) => {
         e.stopPropagation();
@@ -747,7 +954,7 @@ function createClassCard(classData) {
         handlePinToggle(classData.id);
     };
 
-    // Get category color for the card
+    // Get category color for the card's left-edge accent
     const categoryColor = getCategoryColor(classData.reqSatisfied);
 
     card.innerHTML = `
@@ -755,19 +962,12 @@ function createClassCard(classData) {
         <span class="units">(${classData.units} units)</span>
         <span class="tooltip">${tooltipContent}</span>
     `;
-    
+
     card.appendChild(pinButton);
 
-    // Apply category color based on reqSatisfied
+    // Category reads as a quiet left-edge accent, not a full-card recolor
     if (categoryColor) {
-        card.style.backgroundColor = categoryColor.bg;
-        card.style.borderColor = categoryColor.border;
-        card.style.color = categoryColor.text;
-        // Apply text color to all text elements
-        const textElements = card.querySelectorAll('.units, .tooltip, .course-title, .prereq-label, .coreq-label, .prereq-list, .coreq-list, .planning-note, .req-label, .req-value');
-        textElements.forEach(el => {
-            if (el) el.style.color = categoryColor.text;
-        });
+        card.style.setProperty('--card-accent', categoryColor.border);
     }
 
     // Add double-click event listener to the card for editing
@@ -781,17 +981,17 @@ function getCategoryColor(reqSatisfied) {
     if (!reqSatisfied) return null;
 
     const colors = {
-        'Lower Div': { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
-        'Major Core': { bg: '#f3e8ff', border: '#a855f7', text: '#7c3aed' },
-        '5 Elective': { bg: '#dcfce7', border: '#22c55e', text: '#16a34a' },
-        'Capstone': { bg: '#fef3c7', border: '#f59e0b', text: '#d97706' },
-        'Grad Level': { bg: '#fce7f3', border: '#ec4899', text: '#db2777' },
-        'TB': { bg: '#fef9c3', border: '#eab308', text: '#a16207' },
-        'ST': { bg: '#e0e7ff', border: '#6366f1', text: '#4f46e5' },
-        'GE': { bg: '#fed7aa', border: '#f97316', text: '#ea580c' },
-        'Probability': { bg: '#ccfbf1', border: '#14b8a6', text: '#0d9488' },
-        'Stats & DS Minor': { bg: '#cffafe', border: '#06b6d4', text: '#0891b2' },
-        'Required': { bg: '#f1f5f9', border: '#64748b', text: '#475569' }
+        'Lower Div': { bg: '#EAF0F7', border: '#3B6FA6', text: '#28517A' },
+        'Major Core': { bg: '#F0ECF7', border: '#6B4FA0', text: '#4E3877' },
+        '5 Elective': { bg: '#E9F3EC', border: '#3F8B5C', text: '#2E6844' },
+        'Capstone': { bg: '#F6EFE0', border: '#B8862E', text: '#8C6521' },
+        'Grad Level': { bg: '#F4EAF0', border: '#A34B84', text: '#7A3763' },
+        'TB': { bg: '#F5F0DE', border: '#A68A1E', text: '#7C6816' },
+        'ST': { bg: '#EAECF6', border: '#4A5FA6', text: '#37477D' },
+        'GE': { bg: '#F5EBE2', border: '#B15E2E', text: '#864620' },
+        'Probability': { bg: '#E4F1EF', border: '#1E8A82', text: '#166862' },
+        'Stats & DS Minor': { bg: '#E6F0F5', border: '#2E82A6', text: '#23627C' },
+        'Required': { bg: '#EEECE6', border: '#6B6459', text: '#524D44' }
     };
 
     // Check for partial matches (for categories that might have variations)
@@ -814,6 +1014,7 @@ function updateRequirementProgress() {
     const unassignedCourseIds = unassignedQuarter ? unassignedQuarter.classes : [];
 
     ALL_CLASSES_DATA.forEach(course => {
+        if (course.enabled === false) return;
         const rawCategory = course.reqSatisfied || 'Required';
 
         // Split by comma to handle multiple categories (e.g., "Probability, Stats & DS Minor")
@@ -830,6 +1031,14 @@ function updateRequirementProgress() {
                 requirementCategories[category].assigned++;
             }
         });
+    });
+
+    // A configured graduation-requirement target overrides the auto-counted
+    // total (how many courses just happen to be listed under that category).
+    Object.keys(requirementCategories).forEach(category => {
+        if (requirementTargets[category] != null) {
+            requirementCategories[category].total = requirementTargets[category];
+        }
     });
 
     // Update the dashboard
@@ -1425,7 +1634,8 @@ function updateAllUnitCounts() {
 function initializePlanningGraph() {
     const graph = {};
     const coursesToConsiderForPlanning = ALL_CLASSES_DATA
-        .filter(course => course && (course.category === "Required" || course.category === "Capstone" || course.category === "External"))
+        .filter(course => course && course.enabled !== false &&
+            (course.category === "Required" || course.category === "Capstone" || course.category === "External"))
         .sort((a, b) => a.originalOrder - b.originalOrder);
 
     coursesToConsiderForPlanning.forEach(course => {
@@ -1758,6 +1968,110 @@ function loadSavedCategoryPriority() {
     }
 }
 
+// Graduation requirement targets: how many courses each category actually
+// needs. Unset (undefined) means "however many are listed" — the dashboard's
+// prior, purely-derived behavior.
+let requirementTargets = {};
+
+function persistRequirementTargets() {
+    try {
+        localStorage.setItem('requirementTargets', JSON.stringify(requirementTargets));
+    } catch (e) {
+        // localStorage may be unavailable (private mode); silently ignore
+    }
+}
+
+function loadSavedRequirementTargets() {
+    try {
+        const saved = localStorage.getItem('requirementTargets');
+        if (saved) requirementTargets = JSON.parse(saved);
+    } catch (e) {
+        requirementTargets = {};
+    }
+}
+
+function getCourseCategories(course) {
+    const rawCategory = course.reqSatisfied || 'Required';
+    return rawCategory.split(',').map(c => c.trim()).filter(c => c);
+}
+
+function incrementCategoryCounts(course, counts) {
+    getCourseCategories(course).forEach(category => {
+        counts[category] = (counts[category] || 0) + 1;
+    });
+}
+
+// A course still "helps" if at least one of its categories either has no
+// configured target (uncapped) or hasn't hit its target yet. Once every
+// category a course satisfies is already at its target, auto-plan skips it.
+function courseHelpsUnmetCategory(course, categoryPlacedCounts) {
+    const categories = getCourseCategories(course);
+    if (categories.length === 0) return true;
+    return categories.some(category => {
+        const target = requirementTargets[category];
+        if (target == null) return true;
+        return (categoryPlacedCounts[category] || 0) < target;
+    });
+}
+
+function getListedCategoryCounts() {
+    const counts = {};
+    ALL_CLASSES_DATA.forEach(course => {
+        if (course.enabled === false) return;
+        incrementCategoryCounts(course, counts);
+    });
+    return counts;
+}
+
+function loadRequirementTargetsUI() {
+    const list = document.getElementById('requirementTargetsList');
+    if (!list) return;
+
+    const counts = getListedCategoryCounts();
+    const categories = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+
+    if (categories.length === 0) {
+        list.innerHTML = '<li class="category-priority-empty">Load course data to see categories.</li>';
+        return;
+    }
+
+    list.innerHTML = '';
+    categories.forEach(category => {
+        const li = document.createElement('li');
+        li.className = 'requirement-target-item';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'category-name';
+        nameSpan.textContent = category;
+
+        const hintSpan = document.createElement('span');
+        hintSpan.className = 'requirement-target-hint';
+        hintSpan.textContent = `${counts[category]} listed`;
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.className = 'requirement-target-input';
+        input.placeholder = String(counts[category]);
+        if (requirementTargets[category] != null) input.value = requirementTargets[category];
+        input.onchange = () => {
+            const val = input.value.trim();
+            if (val === '') {
+                delete requirementTargets[category];
+            } else {
+                requirementTargets[category] = Math.max(0, parseInt(val) || 0);
+            }
+            persistRequirementTargets();
+            updateRequirementProgress();
+        };
+
+        li.appendChild(nameSpan);
+        li.appendChild(hintSpan);
+        li.appendChild(input);
+        list.appendChild(li);
+    });
+}
+
 function checkPlanningFeasibility(academicQuarters, graph) {
     const unplacedNodes = Object.values(graph).filter(node => !node.placed);
 
@@ -1825,6 +2139,7 @@ function resetQuartersForPlanning() {
     });
     
     unassignedQuarter.classes = ALL_CLASSES_DATA
+        .filter(c => c.enabled !== false)
         .map(c => c.id)
         .filter(id => !lockedCourseIds.has(id));
     
@@ -1934,6 +2249,7 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
 function finalizeUnassignedCourses(graph) {
     const unassignedQuarter = getQuarterById('unassigned');
     unassignedQuarter.classes = ALL_CLASSES_DATA
+        .filter(c => c.enabled !== false)
         .map(c => c.id)
         .filter(id => {
             const courseData = findClassById(id);
@@ -1957,6 +2273,12 @@ function autoPlanCoreCourses() {
     graph = initializePlanningGraph();
     const academicQuarters = getAcademicQuartersForPlanning();
 
+    // Tracks how many courses per category are already placed, so the
+    // planner stops scheduling more once a configured graduation-requirement
+    // target (Advanced Settings) is met, rather than planning every listed
+    // course in that category.
+    const categoryPlacedCounts = {};
+
     // Summer + locked + pinned courses are pre-placed; their ids count as
     // completed for prerequisite checks in subsequent quarters.
     const completed = new Set();
@@ -1965,19 +2287,28 @@ function autoPlanCoreCourses() {
     );
     summerQuarters.forEach(q => q.classes.forEach(id => {
         completed.add(id);
-        if (graph[id]) graph[id].placed = true;
+        if (graph[id]) {
+            graph[id].placed = true;
+            incrementCategoryCounts(graph[id].course, categoryPlacedCounts);
+        }
     }));
     quartersData.forEach(q => {
         if (q.id !== 'unassigned' && isQuarterLocked(q.id)) {
             q.classes.forEach(id => {
                 completed.add(id);
-                if (graph[id]) graph[id].placed = true;
+                if (graph[id]) {
+                    graph[id].placed = true;
+                    incrementCategoryCounts(graph[id].course, categoryPlacedCounts);
+                }
             });
         }
     });
     academicQuarters.forEach(q => {
         q.pinnedClasses.forEach(id => {
-            if (graph[id]) graph[id].placed = true;
+            if (graph[id]) {
+                graph[id].placed = true;
+                incrementCategoryCounts(graph[id].course, categoryPlacedCounts);
+            }
         });
     });
 
@@ -2026,6 +2357,7 @@ function autoPlanCoreCourses() {
         const eligible = Object.values(graph)
             .filter(node => !node.placed && !completed.has(node.course.id))
             .filter(node => checkPrerequisitesSatisfied(node, completed, graph))
+            .filter(node => courseHelpsUnmetCategory(node.course, categoryPlacedCounts))
             .sort((a, b) => scores.get(b.course.id) - scores.get(a.course.id));
 
         if (eligible.length === 0) {
@@ -2035,7 +2367,9 @@ function autoPlanCoreCourses() {
         }
 
         const combos = generateUnitFeasibleCombinations(eligible, remainingBudget);
-        const validCombos = combos.filter(combo => combinationCoreqsSatisfied(combo, completed));
+        const validCombos = combos
+            .filter(combo => combinationCoreqsSatisfied(combo, completed))
+            .filter(combo => comboRespectsCategoryTargets(combo, categoryPlacedCounts));
 
         let bestCombo = [];
         let bestScore = -Infinity;
@@ -2052,6 +2386,7 @@ function autoPlanCoreCourses() {
             node.placed = true;
             quarter.units += node.course.units;
             node.unassignedReason = '';
+            incrementCategoryCounts(node.course, categoryPlacedCounts);
         }
 
         // Backups: highest-scoring eligible courses that didn't make the cut
@@ -2064,6 +2399,17 @@ function autoPlanCoreCourses() {
 
         quarter.classes.forEach(id => completed.add(id));
     }
+
+    // Courses left over solely because their category already hit its
+    // configured target get a specific reason, ahead of the generic pass.
+    Object.values(graph).forEach(node => {
+        if (!node.placed && !courseHelpsUnmetCategory(node.course, categoryPlacedCounts)) {
+            const metCategories = getCourseCategories(node.course)
+                .filter(cat => requirementTargets[cat] != null)
+                .map(cat => `${cat} (${categoryPlacedCounts[cat] || 0}/${requirementTargets[cat]})`);
+            node.unassignedReason = `Not needed — requirement already met: ${metCategories.join(', ')}.`;
+        }
+    });
 
     // Any course still unplaced after the quarter sweep: generate a reason.
     Object.values(graph).forEach(node => {
@@ -2085,6 +2431,216 @@ function combinationCoreqsSatisfied(combo, completed) {
             completed.has(coreqId) || inCombo.has(coreqId) || !graph[coreqId]
         )
     );
+}
+
+// The per-quarter eligible list already excludes courses whose categories
+// are fully met going into the quarter, but several same-category courses
+// can still be simultaneously eligible and land in the same combo — this
+// catches that case so a target can't be overshot within a single quarter.
+function comboRespectsCategoryTargets(combo, categoryPlacedCounts) {
+    const projected = {};
+    for (const node of combo) {
+        for (const category of getCourseCategories(node.course)) {
+            const target = requirementTargets[category];
+            if (target == null) continue;
+            projected[category] = (projected[category] || 0) + 1;
+            if ((categoryPlacedCounts[category] || 0) + projected[category] > target) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Account (Supabase) — entirely optional. If supabase-config.js hasn't been
+// filled in with a real project, supabaseClient is null and these just show
+// a "not configured" message instead of breaking anything.
+function requireSupabase() {
+    if (!supabaseClient) {
+        showAccountError('Backend not configured yet — see supabase-config.js.');
+        return false;
+    }
+    return true;
+}
+
+function openAccountModal() {
+    document.getElementById('accountModalOverlay').classList.add('active');
+    showAccountError('');
+    updateAccountUI();
+}
+
+function closeAccountModal() {
+    document.getElementById('accountModalOverlay').classList.remove('active');
+}
+
+function showAccountError(message) {
+    const el = document.getElementById('accountError');
+    el.textContent = message;
+    el.style.display = message ? 'block' : 'none';
+}
+
+function showAccountStatus(message, isError) {
+    const el = document.getElementById('accountStatusMessage');
+    el.textContent = message;
+    el.style.display = message ? 'block' : 'none';
+    el.classList.toggle('error', !!isError);
+}
+
+function updateAccountUI() {
+    const label = document.getElementById('accountButtonLabel');
+    const signedOutView = document.getElementById('accountSignedOutView');
+    const signedInView = document.getElementById('accountSignedInView');
+
+    if (!supabaseClient) {
+        label.textContent = 'Sign In';
+        return;
+    }
+
+    supabaseClient.auth.getUser().then(({ data }) => {
+        const user = data && data.user;
+        if (user) {
+            label.textContent = user.email;
+            signedOutView.style.display = 'none';
+            signedInView.style.display = 'block';
+            document.getElementById('accountEmailDisplay').textContent = user.email;
+        } else {
+            label.textContent = 'Sign In';
+            signedOutView.style.display = 'block';
+            signedInView.style.display = 'none';
+        }
+    });
+}
+
+let hasAutoLoadedThisSession = false;
+
+function initAccountAuth() {
+    if (!supabaseClient) return;
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        updateAccountUI();
+
+        if (session && !hasAutoLoadedThisSession &&
+            (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+            hasAutoLoadedThisSession = true;
+            loadFromAccount({ silent: true });
+        }
+        if (event === 'SIGNED_OUT') {
+            hasAutoLoadedThisSession = false;
+        }
+    });
+    updateAccountUI();
+}
+
+function handleSignUp() {
+    if (!requireSupabase()) return;
+    const email = document.getElementById('accountEmail').value.trim();
+    const password = document.getElementById('accountPassword').value;
+    showAccountError('');
+
+    supabaseClient.auth.signUp({ email, password }).then(({ data, error }) => {
+        if (error) { showAccountError(error.message); return; }
+        if (data.user && !data.session) {
+            showAccountError('Check your email to confirm your account, then sign in.');
+        } else {
+            updateAccountUI();
+        }
+    });
+}
+
+function handleSignIn() {
+    if (!requireSupabase()) return;
+    const email = document.getElementById('accountEmail').value.trim();
+    const password = document.getElementById('accountPassword').value;
+    showAccountError('');
+
+    supabaseClient.auth.signInWithPassword({ email, password }).then(({ error }) => {
+        if (error) { showAccountError(error.message); return; }
+        updateAccountUI();
+    });
+}
+
+function handleSignOut() {
+    if (!requireSupabase()) return;
+    supabaseClient.auth.signOut().then(() => updateAccountUI());
+}
+
+function saveToAccount() {
+    if (!requireSupabase()) return;
+    supabaseClient.auth.getUser().then(({ data, error }) => {
+        if (error || !data.user) { showAccountStatus('Not signed in.', true); return; }
+
+        const payload = {
+            user_id: data.user.id,
+            course_data: ALL_CLASSES_DATA,
+            plan_data: {
+                quartersData,
+                pinnedCourses: Array.from(pinnedCourses),
+                lockedQuarters: Array.from(lockedQuarters)
+            },
+            settings: {
+                planningSpeed,
+                categoryPriority,
+                currentAcademicSystem,
+                dynamicSettings,
+                planningConfig: PLANNING_CONFIG
+            },
+            updated_at: new Date().toISOString()
+        };
+
+        supabaseClient.from('user_data').upsert(payload).then(({ error: upsertError }) => {
+            if (upsertError) {
+                showAccountStatus('Save failed: ' + upsertError.message, true);
+            } else {
+                showAccountStatus('Saved.', false);
+            }
+        });
+    });
+}
+
+function loadFromAccount(options) {
+    options = options || {};
+    if (!requireSupabase()) return;
+    supabaseClient.auth.getUser().then(({ data, error }) => {
+        if (error || !data.user) {
+            if (!options.silent) showAccountStatus('Not signed in.', true);
+            return;
+        }
+
+        supabaseClient.from('user_data').select('*').eq('user_id', data.user.id).maybeSingle()
+            .then(({ data: row, error: selectError }) => {
+                if (selectError) {
+                    if (!options.silent) showAccountStatus('Load failed: ' + selectError.message, true);
+                    return;
+                }
+                if (!row) {
+                    if (!options.silent) showAccountStatus('No saved data yet — save first.', true);
+                    return;
+                }
+
+                ALL_CLASSES_DATA = row.course_data || [];
+
+                const plan = row.plan_data || {};
+                quartersData = plan.quartersData || [];
+                pinnedCourses = new Set(plan.pinnedCourses || []);
+                lockedQuarters = new Set(plan.lockedQuarters || []);
+
+                const settings = row.settings || {};
+                if (settings.planningSpeed) planningSpeed = settings.planningSpeed;
+                if (settings.categoryPriority) categoryPriority = settings.categoryPriority;
+                if (settings.currentAcademicSystem) currentAcademicSystem = settings.currentAcademicSystem;
+                if (settings.dynamicSettings) Object.assign(dynamicSettings, settings.dynamicSettings);
+                if (settings.planningConfig) Object.assign(PLANNING_CONFIG, settings.planningConfig);
+
+                graph = {};
+                renderPlanner();
+
+                if (!options.silent) {
+                    closeAccountModal();
+                    showSuccessMessage('Loaded from account.');
+                } else if (quartersData.length > 0) {
+                    showSuccessMessage('Welcome back — loaded your saved plan.');
+                }
+            });
+    });
 }
 
 function toggleSidebar() {
@@ -2167,8 +2723,9 @@ function processTakenCourses() {
     console.log('ALL_CLASSES_DATA:', ALL_CLASSES_DATA);
     
     ALL_CLASSES_DATA.forEach(courseData => {
+        if (courseData.enabled === false) return;
         console.log(`Course ${courseData.id}: taken = "${courseData.taken}"`);
-        
+
         if (courseData.taken && courseData.taken !== '') {
             const quarterId = parseQuarterFromTaken(courseData.taken);
             console.log(`Parsed quarter ID for ${courseData.id}: ${quarterId}`);
@@ -2404,6 +2961,7 @@ function openSettingsModal() {
     // Load current settings into the form
     loadCurrentSettings();
     loadCategoryPriorityUI();
+    loadRequirementTargetsUI();
 }
 
 function closeSettingsModal() {
@@ -2607,6 +3165,7 @@ function loadSavedSettings() {
     initializeDynamicUI();
 
     loadSavedCategoryPriority();
+    loadSavedRequirementTargets();
 }
 
 function initializeDynamicUI() {
@@ -2699,9 +3258,11 @@ function calculateDynamicSettings() {
     let actualTotalUnits = 180; // Default fallback
     let courseCount = 0;
 
-    if (ALL_CLASSES_DATA && ALL_CLASSES_DATA.length > 0) {
+    const activeCourses = ALL_CLASSES_DATA.filter(course => course.enabled !== false);
+
+    if (activeCourses.length > 0) {
         // Calculate from actual course data
-        const requiredCourses = ALL_CLASSES_DATA.filter(course =>
+        const requiredCourses = activeCourses.filter(course =>
             course.category === "Required" || course.category === "Capstone" || course.category === "External"
         );
 
@@ -2710,8 +3271,8 @@ function calculateDynamicSettings() {
 
         // If no required courses found, use all courses
         if (actualTotalUnits === 0) {
-            actualTotalUnits = ALL_CLASSES_DATA.reduce((sum, course) => sum + (course.units || 0), 0);
-            courseCount = ALL_CLASSES_DATA.length;
+            actualTotalUnits = activeCourses.reduce((sum, course) => sum + (course.units || 0), 0);
+            courseCount = activeCourses.length;
         }
     }
 
@@ -2836,7 +3397,9 @@ function saveDynamicSettings() {
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
-    
+    loadRawDataColumnPrefs();
+    initAccountAuth();
+
     setupDragAndDrop();
     
     const dataUrlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
