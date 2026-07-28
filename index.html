@@ -271,7 +271,10 @@
 
             <div class="years-container">
                 <div class="years-header">
-                    <h2>Academic Plan</h2>
+                    <div class="years-header-title">
+                        <h2>Academic Plan</h2>
+                        <span id="unitsInPlanCounter" class="units-in-plan"></span>
+                    </div>
                     <div class="action-buttons">
                         <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
                         <button id="settingsButton" onclick="openSettingsModal()">⚙️ Advanced Settings</button>
@@ -459,9 +462,12 @@
 
                 <div class="settings-section">
                     <h4>Graduation Requirements</h4>
-                    <p class="settings-description">How many courses each category actually needs to graduate.
-                        Leave blank to use however many courses you've listed under that category — set a number to
-                        track real progress (e.g. only 2 of the 5 GE electives you've listed are actually required).</p>
+                    <p class="settings-description">How many courses and/or units each category actually needs to
+                        graduate. Leave both blank to use however many courses you've listed. Use Units for a
+                        requirement that's unit-based rather than course-based (e.g. 12 units of upper-division
+                        electives, however many courses that takes) — the dashboard tracks units instead of course
+                        count once set. Auto-plan stops scheduling a category once every target you've set for it is
+                        met.</p>
                     <ul id="requirementTargetsList" class="requirement-targets-list">
                         <li class="category-priority-empty">Load course data to see categories.</li>
                     </ul>

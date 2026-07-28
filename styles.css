@@ -499,6 +499,23 @@ a {
     gap: 12px;
 }
 
+.years-header-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.units-in-plan {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-muted);
+    background: var(--paper-deep);
+    border: 1px solid var(--card-edge);
+    border-radius: 999px;
+    padding: 3px 10px;
+}
+
 .action-buttons {
     display: flex;
     gap: 10px;
@@ -1952,6 +1969,7 @@ h3 {
 .requirement-target-item {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
     padding: 9px 12px;
     background: var(--paper-deep);
@@ -1961,6 +1979,7 @@ h3 {
 
 .requirement-target-item .category-name {
     flex: 1;
+    min-width: 100px;
     font-size: 13px;
     font-weight: 500;
     color: var(--ink);
@@ -1971,6 +1990,20 @@ h3 {
     color: var(--ink-muted);
     font-family: var(--font-mono);
     white-space: nowrap;
+}
+
+.requirement-target-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.requirement-target-field span {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
 
 .requirement-target-input {

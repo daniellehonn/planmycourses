@@ -673,7 +673,67 @@ function renderPlanner() {
     addDragDropListeners();
     updateAllUnitCounts();
     updateRequirementProgress(); // Update requirement progress dashboard
+    updateUnitsInPlanCounter();
     validateAllPrerequisites();
+    savePlanToLocalStorage();
+}
+
+// Auto-saves the course list + full plan to this browser on every render, so
+// a reload restores your last session without needing an account. This is
+// separate from (and in addition to) the optional Supabase account save.
+function savePlanToLocalStorage() {
+    if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) return;
+    try {
+        localStorage.setItem('plannerLocalState', JSON.stringify({
+            courseData: ALL_CLASSES_DATA,
+            quartersData,
+            pinnedCourses: Array.from(pinnedCourses),
+            lockedQuarters: Array.from(lockedQuarters),
+            savedAt: Date.now()
+        }));
+    } catch (e) {
+        // localStorage may be unavailable (private mode) or full; silently ignore
+    }
+}
+
+// Returns true if a prior local session was restored.
+function loadPlanFromLocalStorage() {
+    let raw;
+    try {
+        raw = localStorage.getItem('plannerLocalState');
+    } catch (e) {
+        return false;
+    }
+    if (!raw) return false;
+
+    try {
+        const state = JSON.parse(raw);
+        if (!state.courseData || state.courseData.length === 0) return false;
+
+        ALL_CLASSES_DATA = state.courseData;
+        quartersData = state.quartersData || [];
+        pinnedCourses = new Set(state.pinnedCourses || []);
+        lockedQuarters = new Set(state.lockedQuarters || []);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function updateUnitsInPlanCounter() {
+    const counterEl = document.getElementById('unitsInPlanCounter');
+    if (!counterEl) return;
+
+    const activeCourses = ALL_CLASSES_DATA.filter(c => c.enabled !== false);
+    const totalUnits = activeCourses.reduce((sum, c) => sum + (c.units || 0), 0);
+
+    const unassignedQuarter = getQuarterById('unassigned');
+    const unassignedIds = new Set(unassignedQuarter ? unassignedQuarter.classes : []);
+    const plannedUnits = activeCourses
+        .filter(c => !unassignedIds.has(c.id))
+        .reduce((sum, c) => sum + (c.units || 0), 0);
+
+    counterEl.textContent = totalUnits > 0 ? `${plannedUnits} / ${totalUnits} units planned` : '';
 }
 
 // Raw Data view — an editable snapshot of ALL_CLASSES_DATA. Nothing here
@@ -1015,29 +1075,36 @@ function updateRequirementProgress() {
 
     ALL_CLASSES_DATA.forEach(course => {
         if (course.enabled === false) return;
-        const rawCategory = course.reqSatisfied || 'Required';
-
-        // Split by comma to handle multiple categories (e.g., "Probability, Stats & DS Minor")
-        const categories = rawCategory.split(',').map(c => c.trim()).filter(c => c);
+        const categories = getCourseCategories(course);
 
         categories.forEach(category => {
             if (!requirementCategories[category]) {
-                requirementCategories[category] = { total: 0, assigned: 0 };
+                requirementCategories[category] = { total: 0, assigned: 0, totalUnits: 0, assignedUnits: 0 };
             }
             requirementCategories[category].total++;
+            requirementCategories[category].totalUnits += (course.units || 0);
 
             // Check if course is assigned (not in unassigned)
             if (!unassignedCourseIds.includes(course.id)) {
                 requirementCategories[category].assigned++;
+                requirementCategories[category].assignedUnits += (course.units || 0);
             }
         });
     });
 
     // A configured graduation-requirement target overrides the auto-counted
-    // total (how many courses just happen to be listed under that category).
+    // total. A units target takes priority and switches the row to track
+    // units instead of course count; otherwise a count target overrides just
+    // the total; unconfigured falls back to however many are listed.
     Object.keys(requirementCategories).forEach(category => {
-        if (requirementTargets[category] != null) {
-            requirementCategories[category].total = requirementTargets[category];
+        const target = requirementTargets[category];
+        if (!target) return;
+        if (target.units != null) {
+            requirementCategories[category].total = target.units;
+            requirementCategories[category].assigned = requirementCategories[category].assignedUnits;
+            requirementCategories[category].isUnits = true;
+        } else if (target.count != null) {
+            requirementCategories[category].total = target.count;
         }
     });
 
@@ -1057,11 +1124,13 @@ function updateRequirementProgress() {
         const color = getCategoryColor(category);
         const bgColor = color ? color.border : '#6b7280';
 
+        const unitSuffix = stats.isUnits ? 'u' : '';
+
         dashboardHTML += `
             <div class="requirement-item">
                 <div class="requirement-header">
                     <span class="requirement-name" style="color: ${bgColor}">${category}</span>
-                    <span class="requirement-count">${stats.assigned}/${stats.total}</span>
+                    <span class="requirement-count">${stats.assigned}${unitSuffix}/${stats.total}${unitSuffix}</span>
                 </div>
                 <div class="requirement-bar">
                     <div class="requirement-progress" style="width: ${percentage}%; background-color: ${bgColor}"></div>
@@ -1984,7 +2053,15 @@ function persistRequirementTargets() {
 function loadSavedRequirementTargets() {
     try {
         const saved = localStorage.getItem('requirementTargets');
-        if (saved) requirementTargets = JSON.parse(saved);
+        if (!saved) return;
+        const parsed = JSON.parse(saved);
+        requirementTargets = {};
+        // Migrate from the earlier shape (category -> plain count number)
+        // to category -> { count, units }.
+        Object.keys(parsed).forEach(category => {
+            const val = parsed[category];
+            requirementTargets[category] = (typeof val === 'number') ? { count: val } : val;
+        });
     } catch (e) {
         requirementTargets = {};
     }
@@ -1995,23 +2072,31 @@ function getCourseCategories(course) {
     return rawCategory.split(',').map(c => c.trim()).filter(c => c);
 }
 
-function incrementCategoryCounts(course, counts) {
+function incrementCategoryCounts(course, counts, unitCounts) {
     getCourseCategories(course).forEach(category => {
         counts[category] = (counts[category] || 0) + 1;
+        if (unitCounts) unitCounts[category] = (unitCounts[category] || 0) + (course.units || 0);
     });
 }
 
-// A course still "helps" if at least one of its categories either has no
-// configured target (uncapped) or hasn't hit its target yet. Once every
-// category a course satisfies is already at its target, auto-plan skips it.
-function courseHelpsUnmetCategory(course, categoryPlacedCounts) {
+// A category is "met" only once every dimension it has a configured target
+// for (course count and/or units) has been reached — and only if at least
+// one dimension is actually configured.
+function categoryTargetMet(category, categoryPlacedCounts, categoryPlacedUnits) {
+    const target = requirementTargets[category];
+    if (!target || (target.count == null && target.units == null)) return false;
+    const countOk = target.count == null || (categoryPlacedCounts[category] || 0) >= target.count;
+    const unitsOk = target.units == null || (categoryPlacedUnits[category] || 0) >= target.units;
+    return countOk && unitsOk;
+}
+
+// A course still "helps" if at least one of its categories isn't fully met
+// yet. Once every category a course satisfies is already at target,
+// auto-plan skips it.
+function courseHelpsUnmetCategory(course, categoryPlacedCounts, categoryPlacedUnits) {
     const categories = getCourseCategories(course);
     if (categories.length === 0) return true;
-    return categories.some(category => {
-        const target = requirementTargets[category];
-        if (target == null) return true;
-        return (categoryPlacedCounts[category] || 0) < target;
-    });
+    return categories.some(category => !categoryTargetMet(category, categoryPlacedCounts, categoryPlacedUnits));
 }
 
 function getListedCategoryCounts() {
@@ -2023,11 +2108,22 @@ function getListedCategoryCounts() {
     return counts;
 }
 
+function getListedCategoryUnits() {
+    const counts = {};
+    const units = {};
+    ALL_CLASSES_DATA.forEach(course => {
+        if (course.enabled === false) return;
+        incrementCategoryCounts(course, counts, units);
+    });
+    return units;
+}
+
 function loadRequirementTargetsUI() {
     const list = document.getElementById('requirementTargetsList');
     if (!list) return;
 
     const counts = getListedCategoryCounts();
+    const unitCounts = getListedCategoryUnits();
     const categories = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
 
     if (categories.length === 0) {
@@ -2046,28 +2142,57 @@ function loadRequirementTargetsUI() {
 
         const hintSpan = document.createElement('span');
         hintSpan.className = 'requirement-target-hint';
-        hintSpan.textContent = `${counts[category]} listed`;
+        hintSpan.textContent = `${counts[category]} listed / ${unitCounts[category] || 0}u`;
 
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.min = '0';
-        input.className = 'requirement-target-input';
-        input.placeholder = String(counts[category]);
-        if (requirementTargets[category] != null) input.value = requirementTargets[category];
-        input.onchange = () => {
-            const val = input.value.trim();
-            if (val === '') {
+        const target = requirementTargets[category] || {};
+
+        const countField = document.createElement('div');
+        countField.className = 'requirement-target-field';
+        const countLabel = document.createElement('span');
+        countLabel.textContent = 'Courses';
+        const countInput = document.createElement('input');
+        countInput.type = 'number';
+        countInput.min = '0';
+        countInput.className = 'requirement-target-input';
+        countInput.placeholder = String(counts[category]);
+        if (target.count != null) countInput.value = target.count;
+        countField.appendChild(countLabel);
+        countField.appendChild(countInput);
+
+        const unitsField = document.createElement('div');
+        unitsField.className = 'requirement-target-field';
+        const unitsLabel = document.createElement('span');
+        unitsLabel.textContent = 'Units';
+        const unitsInput = document.createElement('input');
+        unitsInput.type = 'number';
+        unitsInput.min = '0';
+        unitsInput.className = 'requirement-target-input';
+        unitsInput.placeholder = String(unitCounts[category] || 0);
+        if (target.units != null) unitsInput.value = target.units;
+        unitsField.appendChild(unitsLabel);
+        unitsField.appendChild(unitsInput);
+
+        const commit = () => {
+            const countVal = countInput.value.trim();
+            const unitsVal = unitsInput.value.trim();
+            const next = {};
+            if (countVal !== '') next.count = Math.max(0, parseInt(countVal) || 0);
+            if (unitsVal !== '') next.units = Math.max(0, parseInt(unitsVal) || 0);
+            if (next.count == null && next.units == null) {
                 delete requirementTargets[category];
             } else {
-                requirementTargets[category] = Math.max(0, parseInt(val) || 0);
+                requirementTargets[category] = next;
             }
             persistRequirementTargets();
             updateRequirementProgress();
         };
+        countInput.onchange = commit;
+        unitsInput.onchange = commit;
 
         li.appendChild(nameSpan);
         li.appendChild(hintSpan);
-        li.appendChild(input);
+        li.appendChild(countField);
+        li.appendChild(unitsField);
         list.appendChild(li);
     });
 }
@@ -2273,11 +2398,12 @@ function autoPlanCoreCourses() {
     graph = initializePlanningGraph();
     const academicQuarters = getAcademicQuartersForPlanning();
 
-    // Tracks how many courses per category are already placed, so the
+    // Tracks how many courses/units per category are already placed, so the
     // planner stops scheduling more once a configured graduation-requirement
     // target (Advanced Settings) is met, rather than planning every listed
     // course in that category.
     const categoryPlacedCounts = {};
+    const categoryPlacedUnits = {};
 
     // Summer + locked + pinned courses are pre-placed; their ids count as
     // completed for prerequisite checks in subsequent quarters.
@@ -2289,7 +2415,7 @@ function autoPlanCoreCourses() {
         completed.add(id);
         if (graph[id]) {
             graph[id].placed = true;
-            incrementCategoryCounts(graph[id].course, categoryPlacedCounts);
+            incrementCategoryCounts(graph[id].course, categoryPlacedCounts, categoryPlacedUnits);
         }
     }));
     quartersData.forEach(q => {
@@ -2298,7 +2424,7 @@ function autoPlanCoreCourses() {
                 completed.add(id);
                 if (graph[id]) {
                     graph[id].placed = true;
-                    incrementCategoryCounts(graph[id].course, categoryPlacedCounts);
+                    incrementCategoryCounts(graph[id].course, categoryPlacedCounts, categoryPlacedUnits);
                 }
             });
         }
@@ -2307,7 +2433,7 @@ function autoPlanCoreCourses() {
         q.pinnedClasses.forEach(id => {
             if (graph[id]) {
                 graph[id].placed = true;
-                incrementCategoryCounts(graph[id].course, categoryPlacedCounts);
+                incrementCategoryCounts(graph[id].course, categoryPlacedCounts, categoryPlacedUnits);
             }
         });
     });
@@ -2357,7 +2483,7 @@ function autoPlanCoreCourses() {
         const eligible = Object.values(graph)
             .filter(node => !node.placed && !completed.has(node.course.id))
             .filter(node => checkPrerequisitesSatisfied(node, completed, graph))
-            .filter(node => courseHelpsUnmetCategory(node.course, categoryPlacedCounts))
+            .filter(node => courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits))
             .sort((a, b) => scores.get(b.course.id) - scores.get(a.course.id));
 
         if (eligible.length === 0) {
@@ -2369,7 +2495,7 @@ function autoPlanCoreCourses() {
         const combos = generateUnitFeasibleCombinations(eligible, remainingBudget);
         const validCombos = combos
             .filter(combo => combinationCoreqsSatisfied(combo, completed))
-            .filter(combo => comboRespectsCategoryTargets(combo, categoryPlacedCounts));
+            .filter(combo => comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits));
 
         let bestCombo = [];
         let bestScore = -Infinity;
@@ -2386,7 +2512,7 @@ function autoPlanCoreCourses() {
             node.placed = true;
             quarter.units += node.course.units;
             node.unassignedReason = '';
-            incrementCategoryCounts(node.course, categoryPlacedCounts);
+            incrementCategoryCounts(node.course, categoryPlacedCounts, categoryPlacedUnits);
         }
 
         // Backups: highest-scoring eligible courses that didn't make the cut
@@ -2403,10 +2529,16 @@ function autoPlanCoreCourses() {
     // Courses left over solely because their category already hit its
     // configured target get a specific reason, ahead of the generic pass.
     Object.values(graph).forEach(node => {
-        if (!node.placed && !courseHelpsUnmetCategory(node.course, categoryPlacedCounts)) {
+        if (!node.placed && !courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits)) {
             const metCategories = getCourseCategories(node.course)
                 .filter(cat => requirementTargets[cat] != null)
-                .map(cat => `${cat} (${categoryPlacedCounts[cat] || 0}/${requirementTargets[cat]})`);
+                .map(cat => {
+                    const target = requirementTargets[cat];
+                    if (target.units != null) {
+                        return `${cat} (${categoryPlacedUnits[cat] || 0}/${target.units}u)`;
+                    }
+                    return `${cat} (${categoryPlacedCounts[cat] || 0}/${target.count})`;
+                });
             node.unassignedReason = `Not needed — requirement already met: ${metCategories.join(', ')}.`;
         }
     });
@@ -2437,14 +2569,21 @@ function combinationCoreqsSatisfied(combo, completed) {
 // are fully met going into the quarter, but several same-category courses
 // can still be simultaneously eligible and land in the same combo — this
 // catches that case so a target can't be overshot within a single quarter.
-function comboRespectsCategoryTargets(combo, categoryPlacedCounts) {
-    const projected = {};
+function comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits) {
+    const projectedCount = {};
+    const projectedUnits = {};
     for (const node of combo) {
         for (const category of getCourseCategories(node.course)) {
             const target = requirementTargets[category];
-            if (target == null) continue;
-            projected[category] = (projected[category] || 0) + 1;
-            if ((categoryPlacedCounts[category] || 0) + projected[category] > target) {
+            if (!target) continue;
+            projectedCount[category] = (projectedCount[category] || 0) + 1;
+            projectedUnits[category] = (projectedUnits[category] || 0) + (node.course.units || 0);
+            if (target.count != null &&
+                (categoryPlacedCounts[category] || 0) + projectedCount[category] > target.count) {
+                return false;
+            }
+            if (target.units != null &&
+                (categoryPlacedUnits[category] || 0) + projectedUnits[category] > target.units) {
                 return false;
             }
         }
@@ -3401,12 +3540,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initAccountAuth();
 
     setupDragAndDrop();
-    
+
     const dataUrlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
     if (dataUrlInput && dataUrlInput.value) {
-         loadCourseData();
+        loadCourseData();
+    } else if (loadPlanFromLocalStorage()) {
+        // Restored your last session's course list + plan from this browser
+        renderPlanner();
     } else {
-        initializeQuarters(); 
+        initializeQuarters();
         renderPlanner();
     }
 });
