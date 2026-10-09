@@ -48,9 +48,8 @@ const DEFAULT_CATEGORY_PRIORITY = [
     '5 Elective',
     'TB',
     'GE',
-    'Probability, Stats & DS Minor',
+    'Probability',
     'Stats & DS Minor',
-    'ST, Stats & DS Minor',
     'ST',
     'Grad Level'
 ];
@@ -261,9 +260,7 @@ async function processTSVData(tsvData) {
     const courseData = parsedData.map((row, index) => ({
         id: row['Course Number'],
         name: row['Course Number'],
-        prerequisites: (row['Prerequisites'] && row['Prerequisites'].trim().toLowerCase() !== 'none' && row['Prerequisites'].trim() !== '')
-                     ? row['Prerequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
-                     : [],
+        prerequisites: parsePrerequisites(row['Prerequisites']),
         corequisites: (row['Corequisites'] && row['Corequisites'].trim().toLowerCase() !== 'none' && row['Corequisites'].trim() !== '')
                      ? row['Corequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                      : [],
@@ -285,7 +282,10 @@ async function processTSVData(tsvData) {
     // If validation passes, assign to global variable
     ALL_CLASSES_DATA = courseData;
 
-    // Initialize fresh quarters with no pinned courses
+    // Initialize fresh quarters with no pinned courses or locks left over
+    // from a previously loaded course list
+    pinnedCourses = new Set();
+    lockedQuarters = new Set();
     initializeQuarters();
     
     // Process courses with "Taken" assignments
@@ -327,7 +327,7 @@ function validateTSVData(courseData) {
 
     // 2. Check that all prerequisites exist as courses and are not self-referencing
     courseData.forEach((course, index) => {
-        course.prerequisites.forEach(prereqId => {
+        allPrereqIds(course).forEach(prereqId => {
             const prereqIdTrimmed = prereqId.trim();
             
             // Check for self-referencing prerequisite
@@ -374,9 +374,9 @@ function validateTSVData(courseData) {
 
     // 4. Check for circular prerequisite dependencies (basic check)
     courseData.forEach((course, index) => {
-        course.prerequisites.forEach(prereqId => {
+        allPrereqIds(course).forEach(prereqId => {
             const prereqCourse = courseData.find(c => c.id.trim() === prereqId.trim());
-            if (prereqCourse && prereqCourse.prerequisites.some(p => p.trim() === course.id.trim())) {
+            if (prereqCourse && allPrereqIds(prereqCourse).some(p => p.trim() === course.id.trim())) {
                 validationErrors.push(`Circular prerequisite dependency detected between "${course.id}" (row ${index + 2}) and "${prereqId}"`);
             }
         });
@@ -420,54 +420,65 @@ function formatValidationErrors(errors) {
 }
 
 function parseDelimited(text) {
-    const lines = text.trim().split('\n').filter(line => line.trim() !== '');
-    if (lines.length < 1) return [];
+    text = text.replace(/^\uFEFF/, '');
+    if (text.trim() === '') return [];
 
     // Detect delimiter: check first line for tabs or commas
-    const firstLine = lines[0];
+    const firstLine = text.split(/\r?\n/, 1)[0];
     const tabCount = (firstLine.match(/\t/g) || []).length;
     const commaCount = (firstLine.match(/,/g) || []).length;
 
     const delimiter = tabCount > commaCount ? '\t' : ',';
 
-    // Parse CSV with proper quote handling
-    function parseCSVLine(line) {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
+    // Character-level parse so quoted fields may contain delimiters, escaped
+    // quotes ("") and line breaks (Google Sheets exports multi-line cells).
+    const rows = [];
+    let row = [];
+    let current = '';
+    let inQuotes = false;
 
-        for (let i = 0; i < line.length; i++) {
-            const char = line[i];
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
 
-            if (char === '"') {
-                if (inQuotes && line[i + 1] === '"') {
-                    // Escaped quote
-                    current += '"';
-                    i++;
-                } else {
-                    // Toggle quote state
-                    inQuotes = !inQuotes;
-                }
-            } else if (char === delimiter && !inQuotes) {
-                result.push(current.trim());
-                current = '';
+        if (inQuotes) {
+            if (char === '"' && text[i + 1] === '"') {
+                current += '"';
+                i++;
+            } else if (char === '"') {
+                inQuotes = false;
             } else {
                 current += char;
             }
+        } else if (char === '"') {
+            inQuotes = true;
+        } else if (char === delimiter) {
+            row.push(current.trim());
+            current = '';
+        } else if (char === '\n' || char === '\r') {
+            if (char === '\r' && text[i + 1] === '\n') i++;
+            row.push(current.trim());
+            rows.push(row);
+            row = [];
+            current = '';
+        } else {
+            current += char;
         }
-        result.push(current.trim());
-        return result;
     }
+    row.push(current.trim());
+    rows.push(row);
 
-    const headers = parseCSVLine(lines[0]);
+    // Skip blank lines and rows where every cell is empty (trailing sheet rows)
+    const nonEmptyRows = rows.filter(r => r.some(value => value !== ''));
+    if (nonEmptyRows.length < 1) return [];
 
-    return lines.slice(1).map(line => {
-        const values = parseCSVLine(line);
-        return headers.reduce((obj, header, index) => {
+    const headers = nonEmptyRows[0];
+
+    return nonEmptyRows.slice(1).map(values =>
+        headers.reduce((obj, header, index) => {
             obj[header] = values[index] || '';
             return obj;
-        }, {});
-    });
+        }, {})
+    );
 }
 
 // Keep parseTSV as an alias for backwards compatibility
@@ -475,11 +486,22 @@ function parseTSV(tsvText) {
     return parseDelimited(tsvText);
 }
 
+// Course data comes from user-supplied (often shared) spreadsheets, so
+// escape it before interpolating into HTML strings.
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function showError(message) {
     const errorMessage = document.getElementById('errorMessage');
     
-    // Convert newlines to HTML line breaks for better display
-    const formattedMessage = message.replace(/\n/g, '<br>');
+    // Escape (messages can echo course data), then keep line breaks
+    const formattedMessage = escapeHtml(message).replace(/\n/g, '<br>');
     errorMessage.innerHTML = formattedMessage;
     errorMessage.style.display = 'block';
 }
@@ -535,6 +557,39 @@ function initializeQuarters(numYears = null) {
         pinnedClasses: [], // Unassigned can't have pinned courses
         units: 0
     });
+}
+
+// Prerequisites/corequisites pointing at a disabled or missing course are
+// ignored, matching how auto-plan treats courses outside the planning graph.
+function isActiveCourseId(classId) {
+    const course = findClassById(classId);
+    return !!course && course.enabled !== false;
+}
+
+// Prerequisites are a list of entries that must ALL be met (comma-separated
+// in the sheet). An entry may be an OR-group written "CS 31 / CS 31E": it is
+// met when ANY of its courses is done.
+function parsePrerequisites(raw) {
+    if (!raw || raw.trim() === '' || raw.trim().toLowerCase() === 'none') return [];
+    return raw.split(',')
+        .map(entry => prereqAlternatives(entry).join(' / '))
+        .filter(entry => entry);
+}
+
+function prereqAlternatives(entry) {
+    return entry.split('/').map(id => id.trim()).filter(id => id);
+}
+
+// Every course id mentioned in a course's prerequisites, across OR-groups.
+function allPrereqIds(course) {
+    return course.prerequisites.flatMap(prereqAlternatives);
+}
+
+// isRelevant filters out alternatives to ignore (disabled/missing courses);
+// an entry with no relevant alternatives left is treated as met.
+function isPrereqEntryMet(entry, completed, isRelevant) {
+    const alternatives = prereqAlternatives(entry).filter(isRelevant);
+    return alternatives.length === 0 || alternatives.some(id => completed.has(id));
 }
 
 function findClassById(classId) {
@@ -681,16 +736,32 @@ function renderPlanner() {
 // Auto-saves the course list + full plan to this browser on every render, so
 // a reload restores your last session without needing an account. This is
 // separate from (and in addition to) the optional Supabase account save.
+function localPlanSavedAt() {
+    try {
+        const raw = localStorage.getItem('plannerLocalState');
+        return raw ? (JSON.parse(raw).savedAt || 0) : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
 function savePlanToLocalStorage() {
     if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) return;
     try {
-        localStorage.setItem('plannerLocalState', JSON.stringify({
+        const state = {
             courseData: ALL_CLASSES_DATA,
             quartersData,
             pinnedCourses: Array.from(pinnedCourses),
-            lockedQuarters: Array.from(lockedQuarters),
-            savedAt: Date.now()
-        }));
+            lockedQuarters: Array.from(lockedQuarters)
+        };
+        // savedAt marks the last real change (not the last render), so it
+        // can be compared against the account copy's updated_at.
+        const previous = JSON.parse(localStorage.getItem('plannerLocalState') || 'null');
+        if (previous) {
+            const { savedAt, ...previousState } = previous;
+            if (JSON.stringify(previousState) === JSON.stringify(state)) return;
+        }
+        localStorage.setItem('plannerLocalState', JSON.stringify({ ...state, savedAt: Date.now() }));
     } catch (e) {
         // localStorage may be unavailable (private mode) or full; silently ignore
     }
@@ -897,9 +968,7 @@ function applyRawDataToPlanner() {
             return {
                 id: get('id'),
                 name: get('id'),
-                prerequisites: (prereqRaw && prereqRaw.toLowerCase() !== 'none')
-                    ? prereqRaw.split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
-                    : [],
+                prerequisites: parsePrerequisites(prereqRaw),
                 corequisites: (coreqRaw && coreqRaw.toLowerCase() !== 'none')
                     ? coreqRaw.split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                     : [],
@@ -921,16 +990,17 @@ function applyRawDataToPlanner() {
         return;
     }
 
+    // Keep existing placements, pins and locks for courses that still exist;
+    // new or newly re-enabled courses are placed from their Taken value or
+    // land in Unassigned.
     ALL_CLASSES_DATA = courseData;
-    pinnedCourses.clear();
-    lockedQuarters.clear();
     graph = {};
-    initializeQuarters();
+    rebuildQuartersKeepingPlacements();
     processTakenCourses();
     updateDynamicSettings();
     renderPlanner();
 
-    showSuccessMessage('Applied changes to planner!');
+    showSuccessMessage('Applied changes. Your existing plan was kept.');
     switchToView('planner');
 }
 
@@ -948,33 +1018,15 @@ function createClassCard(classData) {
         card.classList.add('pinned');
     }
     
-    const prereqsText = classData.prerequisites.join(', ') || 'None';
-    const coreqsText = classData.corequisites.join(', ') || 'None';
+    const prereqsText = escapeHtml(classData.prerequisites.join(', ') || 'None');
+    const coreqsText = escapeHtml(classData.corequisites.join(', ') || 'None');
     
-    // Check for conflicts to include in description
-    const quarterElement = card.closest('.quarter');
-    let conflictDescription = '';
-    
-    if (quarterElement && quarterElement.id !== 'unassignedClasses') {
-        const quarterId = quarterElement.id;
-        const validation = validateCoursePlacement(classData.id, quarterId);
-        if (!validation.isValid) {
-            conflictDescription = `<div style="color: #dc2626; font-weight: 600; margin-top: 8px; padding: 6px; background: rgba(239, 68, 68, 0.1); border-radius: 4px; font-size: 12px;">
-                ⚠️ ${validation.reason}
-            </div>`;
-        }
-    } else if (graph[classData.id] && graph[classData.id].unassignedReason) {
-        conflictDescription = `<div style="color: #ea580c; font-weight: 600; margin-top: 8px; padding: 6px; background: rgba(251, 146, 60, 0.1); border-radius: 4px; font-size: 12px;">
-            ⚠️ ${graph[classData.id].unassignedReason}
-        </div>`;
-    }
-
     // Create structured tooltip content
     let tooltipContent = `
-        <span class="course-title">${classData.description || 'No description available'}</span>
+        <span class="course-title">${escapeHtml(classData.description || 'No description available')}</span>
         <div class="course-req">
             <span class="req-label">Requirement:</span>
-            <span class="req-value">${classData.reqSatisfied || 'Required'}</span>
+            <span class="req-value">${escapeHtml(classData.reqSatisfied || 'Required')}</span>
         </div>
         <div class="course-prereqs">
             <span class="prereq-label">Prerequisites:</span>
@@ -996,7 +1048,7 @@ function createClassCard(classData) {
     if (planningNote) {
         const noteClass = card.classList.contains('class-card-unassigned-failed') ? 'warning' : '';
         tooltipContent += `<div class="planning-note ${noteClass}">
-            <strong>Planning Note:</strong> ${planningNote}
+            <strong>Planning Note:</strong> ${escapeHtml(planningNote)}
             <p>Try playing around with the max units to get your desired results!</p>
         </div>`;
     }
@@ -1018,7 +1070,7 @@ function createClassCard(classData) {
     const categoryColor = getCategoryColor(classData.reqSatisfied);
 
     card.innerHTML = `
-        ${classData.name}
+        ${escapeHtml(classData.name)}
         <span class="units">(${classData.units} units)</span>
         <span class="tooltip">${tooltipContent}</span>
     `;
@@ -1129,7 +1181,7 @@ function updateRequirementProgress() {
         dashboardHTML += `
             <div class="requirement-item">
                 <div class="requirement-header">
-                    <span class="requirement-name" style="color: ${bgColor}">${category}</span>
+                    <span class="requirement-name" style="color: ${bgColor}">${escapeHtml(category)}</span>
                     <span class="requirement-count">${stats.assigned}${unitSuffix}/${stats.total}${unitSuffix}</span>
                 </div>
                 <div class="requirement-bar">
@@ -1164,33 +1216,33 @@ function showEditModal(course) {
     modal.innerHTML = `
         <div class="edit-modal-content">
             <div class="edit-modal-header">
-                <input type="color" id="edit-color" class="color-picker" value="${course.color || '#ffffff'}">
-                <h3>Edit Course: ${course.name}</h3>
+                <input type="color" id="edit-color" class="color-picker" value="${escapeHtml(course.color || '#ffffff')}">
+                <h3>Edit Course: ${escapeHtml(course.name)}</h3>
             </div>
             <form id="edit-course-form">
                 <div class="edit-form-group">
                     <label for="edit-name">Course Name</label>
-                    <input type="text" id="edit-name" value="${course.name}">
+                    <input type="text" id="edit-name" value="${escapeHtml(course.name)}">
                 </div>
                 <div class="edit-form-group">
                     <label for="edit-description">Description</label>
-                    <textarea id="edit-description" rows="3">${course.description || ''}</textarea>
+                    <textarea id="edit-description" rows="3">${escapeHtml(course.description || '')}</textarea>
                 </div>
                 <div class="edit-form-group">
                     <label for="edit-units">Units</label>
-                    <input type="number" id="edit-units" value="${course.units}" min="1" max="10">
+                    <input type="number" id="edit-units" value="${escapeHtml(course.units)}" min="1" max="10">
                 </div>
                 <div class="edit-form-group">
                     <label for="edit-reqsatisfied">Requirement Category</label>
-                    <input type="text" id="edit-reqsatisfied" value="${course.reqSatisfied || 'Required'}">
+                    <input type="text" id="edit-reqsatisfied" value="${escapeHtml(course.reqSatisfied || 'Required')}">
                 </div>
                 <div class="edit-form-group">
                     <label for="edit-prerequisites">Prerequisites (comma-separated)</label>
-                    <input type="text" id="edit-prerequisites" value="${course.prerequisites.join(', ')}">
+                    <input type="text" id="edit-prerequisites" value="${escapeHtml(course.prerequisites.join(', '))}">
                 </div>
                 <div class="edit-form-group">
                     <label for="edit-corequisites">Corequisites (comma-separated)</label>
-                    <input type="text" id="edit-corequisites" value="${course.corequisites.join(', ')}">
+                    <input type="text" id="edit-corequisites" value="${escapeHtml(course.corequisites.join(', '))}">
                 </div>
                 <div class="edit-form-actions">
                     <button type="button" class="cancel">Cancel</button>
@@ -1216,7 +1268,7 @@ function showEditModal(course) {
 
         // Parse prerequisites and corequisites
         const prereqsText = document.getElementById('edit-prerequisites').value.trim();
-        course.prerequisites = prereqsText ? prereqsText.split(',').map(p => p.trim()).filter(p => p) : [];
+        course.prerequisites = parsePrerequisites(prereqsText);
         
         const coreqsText = document.getElementById('edit-corequisites').value.trim();
         course.corequisites = coreqsText ? coreqsText.split(',').map(c => c.trim()).filter(c => c) : [];
@@ -1349,7 +1401,7 @@ function highlightPrerequisiteDependencies(courseId) {
     
     // Find all courses that have this course as prerequisite
     const dependentCourses = ALL_CLASSES_DATA.filter(c => 
-        c.prerequisites.includes(courseId)
+        allPrereqIds(c).includes(courseId)
     );
     
     // Find the dragged course element
@@ -1381,7 +1433,7 @@ function highlightPrerequisiteDependencies(courseId) {
     });
     
     // Also highlight prerequisites of the dragged course
-    course.prerequisites.forEach(prereqId => {
+    allPrereqIds(course).forEach(prereqId => {
         const prereqElement = document.querySelector(`[data-class-id="${prereqId}"]`);
         if (prereqElement) {
             prereqElement.classList.add('prerequisite-prerequisite');
@@ -1451,7 +1503,7 @@ function updateLinePositions(e) {
     
     // Find all courses that have this course as prerequisite
     const dependentCourses = ALL_CLASSES_DATA.filter(c => 
-        c.prerequisites.includes(draggedClassId)
+        allPrereqIds(c).includes(draggedClassId)
     );
     
     // Draw lines from mouse position to dependent courses
@@ -1469,7 +1521,7 @@ function updateLinePositions(e) {
     });
     
     // Draw lines from prerequisites to mouse position
-    course.prerequisites.forEach(prereqId => {
+    allPrereqIds(course).forEach(prereqId => {
         const prereqElement = document.querySelector(`[data-class-id="${prereqId}"]`);
         if (prereqElement) {
             const prereqRect = prereqElement.getBoundingClientRect();
@@ -1492,23 +1544,39 @@ function handleDrop(e) {
     const classId = e.dataTransfer.getData('text/plain');
     const targetQuarterId = targetDropZoneEl.id === 'unassignedClasses' ? 'unassigned' : targetDropZoneEl.dataset.quarterId;
     
-    let originalQuarter = quartersData.find(q => q.classes.includes(classId));
-    if (originalQuarter) {
-        originalQuarter.classes = originalQuarter.classes.filter(id => id !== classId);
+    const originalQuarter = quartersData.find(q => q.classes.includes(classId));
+    const newQuarter = getQuarterById(targetQuarterId);
+    if (!newQuarter || originalQuarter === newQuarter) return;
+
+    if ((originalQuarter && isQuarterLocked(originalQuarter.id)) || isQuarterLocked(targetQuarterId)) {
+        showConflictMessage('Unlock the quarter first to move courses in or out of it.', e.clientX, e.clientY);
+        return;
     }
 
-    const newQuarter = getQuarterById(targetQuarterId);
-    if (newQuarter) {
-        // Allow placement but show conflict reason
-        const validationResult = validateCoursePlacement(classId, targetQuarterId);
-        
-        // Allow placement without showing conflict message
-        
-        if (!newQuarter.classes.includes(classId)) { 
-            newQuarter.classes.push(classId);
+    // Placement is allowed even when it breaks a prerequisite (the card turns
+    // red), but tell the user why.
+    const validationResult = validateCoursePlacement(classId, targetQuarterId);
+    if (!validationResult.isValid) {
+        showConflictMessage(validationResult.reason, e.clientX, e.clientY);
+    }
+
+    if (originalQuarter) {
+        originalQuarter.classes = originalQuarter.classes.filter(id => id !== classId);
+        // A pin belongs to a quarter: move it with the course, or drop it when
+        // the course goes back to Unassigned.
+        if (originalQuarter.pinnedClasses && originalQuarter.pinnedClasses.includes(classId)) {
+            originalQuarter.pinnedClasses = originalQuarter.pinnedClasses.filter(id => id !== classId);
+            if (targetQuarterId === 'unassigned') {
+                pinnedCourses.delete(classId);
+            } else {
+                newQuarter.pinnedClasses.push(classId);
+            }
         }
     }
-    renderPlanner(); 
+    newQuarter.classes.push(classId);
+    if (graph[classId]) graph[classId].unassignedReason = '';
+
+    renderPlanner();
 }
 
 function validateCoursePlacement(classId, targetQuarterId) {
@@ -1530,29 +1598,28 @@ function validateCoursePlacement(classId, targetQuarterId) {
     const completedBeforeQuarter = getCompletedCoursesBeforeQuarter(targetQuarterId);
     
     // Check prerequisites
-    for (const prereqId of course.prerequisites) {
-        if (!completedBeforeQuarter.has(prereqId)) {
-            const prereqCourse = findClassById(prereqId);
-            const prereqName = prereqCourse ? prereqCourse.id : prereqId;
-            return { isValid: false, reason: `Missing prerequisite: ${prereqName}` };
+    for (const entry of course.prerequisites) {
+        if (!isPrereqEntryMet(entry, completedBeforeQuarter, isActiveCourseId)) {
+            return { isValid: false, reason: `Missing prerequisite: ${entry}` };
         }
     }
 
     // Check corequisites
     for (const coreqId of course.corequisites) {
-        if (!completedBeforeQuarter.has(coreqId) && 
+        if (isActiveCourseId(coreqId) && !completedBeforeQuarter.has(coreqId) &&
             !targetQuarter.classes.includes(coreqId)) {
             const coreqCourse = findClassById(coreqId);
             const coreqName = coreqCourse ? coreqCourse.id : coreqId;
-            return { isValid: false, reason: `Missing corequisite: ${coreqName} (must be taken same quarter)` };
+            return { isValid: false, reason: `Missing corequisite: ${coreqName} (take it earlier or in the same quarter)` };
         }
     }
 
     // Check unit limits
     const currentUnits = targetQuarter.units;
     const newUnits = currentUnits + course.units;
-    if (newUnits > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER) {
-        return { isValid: false, reason: `Would exceed max units (${PLANNING_CONFIG.MAX_UNITS_PER_QUARTER}). Current: ${currentUnits}, Adding: ${course.units}` };
+    const maxUnits = getEffectiveMaxUnitsPerQuarter();
+    if (newUnits > maxUnits) {
+        return { isValid: false, reason: `Would exceed max units (${maxUnits}). Current: ${currentUnits}, Adding: ${course.units}` };
     }
 
     return { isValid: true, reason: '' };
@@ -1560,16 +1627,9 @@ function validateCoursePlacement(classId, targetQuarterId) {
 
 function getCompletedCoursesBeforeQuarter(targetQuarterId) {
     const completed = new Set();
-    
-    // Add summer courses as completed
-    const summerQuarters = quartersData.filter(q => 
-        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
-    );
-    summerQuarters.forEach(quarter => {
-        quarter.classes.forEach(courseId => completed.add(courseId));
-    });
 
-    // Add courses from quarters before the target quarter
+    // Add courses from quarters before the target quarter (summer is ordered
+    // first within its year, so it only counts for later quarters)
     const targetOrder = getQuarterChronologicalOrder(getQuarterById(targetQuarterId));
     quartersData.forEach(quarter => {
         if (quarter.id !== 'unassigned' && quarter.id !== targetQuarterId) {
@@ -1638,8 +1698,8 @@ function validateAllPrerequisites() {
             // Check prerequisites
             if (classData.prerequisites.length > 0) {
                 let prereqsMet = true;
-                for (const prereqId of classData.prerequisites) {
-                    if (!completedClassesCumulative.has(prereqId)) {
+                for (const entry of classData.prerequisites) {
+                    if (!isPrereqEntryMet(entry, completedClassesCumulative, isActiveCourseId)) {
                         prereqsMet = false;
                         break;
                     }
@@ -1653,8 +1713,9 @@ function validateAllPrerequisites() {
             if (classData.corequisites.length > 0) {
                 let coreqsMet = true;
                 for (const coreqId of classData.corequisites) {
-                    // Corequisite must be in the same quarter
-                    if (!quarter.classes.includes(coreqId)) {
+                    // Corequisite must be taken earlier or in the same quarter
+                    if (isActiveCourseId(coreqId) && !quarter.classes.includes(coreqId) &&
+                        !completedClassesCumulative.has(coreqId)) {
                         coreqsMet = false;
                         break;
                     }
@@ -1722,7 +1783,7 @@ function initializePlanningGraph() {
 
     // Build dependency relationships
     Object.values(graph).forEach(node => {
-        node.prerequisites.forEach(prereqId => {
+        node.prerequisites.flatMap(prereqAlternatives).forEach(prereqId => {
             if (graph[prereqId]) {
                 graph[prereqId].dependents.push(node.course.id);
             }
@@ -1768,7 +1829,7 @@ function syncCategoryPriorityWithData() {
     if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) return;
 
     const dataCategories = [...new Set(
-        ALL_CLASSES_DATA.map(c => c.reqSatisfied).filter(c => c)
+        ALL_CLASSES_DATA.flatMap(getCourseCategories)
     )];
 
     if (categoryPriority.length === 0) {
@@ -1812,7 +1873,7 @@ function deriveRequirementWeights() {
 // True if a course counts toward the degree (Major Core, Capstone, etc.).
 // Used for the spec's required-vs-elective unlock split.
 function isRequiredCourse(courseNode) {
-    return courseNode && REQUIRED_CATEGORIES.has(courseNode.course.reqSatisfied);
+    return !!courseNode && getCourseCategories(courseNode.course).some(c => REQUIRED_CATEGORIES.has(c));
 }
 
 // Transitive closure of dependents, excluding direct dependents themselves.
@@ -1858,7 +1919,9 @@ function computePriorityScore(courseNode, graph, requirementWeights) {
     const electiveIndirect = indirectUnlockNodes.length - requiredIndirect;
 
     const longestChain = courseNode.dependencyDepth;
-    const requirementWeight = requirementWeights[course.reqSatisfied] ?? 1;
+    // A course counting toward several categories takes the highest weight
+    const requirementWeight = Math.max(1,
+        ...getCourseCategories(course).map(c => requirementWeights[c] ?? 1));
     const difficultyPenalty = (course.units || 0) * 2;
 
     return (
@@ -1934,10 +1997,8 @@ function scoreCombination(combo, quarter, scores) {
 }
 
 function isTechnicalCourse(course) {
-    return REQUIRED_CATEGORIES.has(course.reqSatisfied)
-        || course.reqSatisfied === '5 Elective'
-        || course.reqSatisfied === 'ST'
-        || course.reqSatisfied === 'Grad Level';
+    return getCourseCategories(course).some(c =>
+        REQUIRED_CATEGORIES.has(c) || c === '5 Elective' || c === 'ST' || c === 'Grad Level');
 }
 
 function loadCategoryPriorityUI() {
@@ -2312,22 +2373,23 @@ function getAcademicQuartersForPlanning() {
 }
 
 function checkPrerequisitesSatisfied(courseNode, completedBeforeQuarter, graph) {
-    return courseNode.prerequisites.every(prereqId =>
-        completedBeforeQuarter.has(prereqId) || !graph[prereqId]
+    return courseNode.prerequisites.every(entry =>
+        isPrereqEntryMet(entry, completedBeforeQuarter, id => !!graph[id])
     );
 }
 
 function generateUnassignedReason(courseNode, academicQuarters, graph) {
     let prereqDetail = "";
-    for (const prereqId of courseNode.prerequisites) {
-        if (graph[prereqId] && !graph[prereqId].placed) {
-            prereqDetail = `Prereq. ${prereqId} not scheduled.`;
+    for (const entry of courseNode.prerequisites) {
+        const alternatives = prereqAlternatives(entry);
+        const inGraph = alternatives.filter(id => graph[id]);
+        if (inGraph.length > 0 && !inGraph.some(id => graph[id].placed)) {
+            prereqDetail = `Prereq. ${entry} not scheduled.`;
             break;
         }
 
-        const prereqCourseData = findClassById(prereqId);
-        if (!prereqCourseData && !graph[prereqId]) {
-            prereqDetail = `Prereq. ${prereqId} missing from data.`;
+        if (alternatives.every(id => !findClassById(id) && !graph[id])) {
+            prereqDetail = `Prereq. ${entry} missing from data.`;
             break;
         }
     }
@@ -2340,22 +2402,23 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
     const course = courseNode.course;
     let hasUnitsCapacity = false;
 
-    // Include summer courses as completed
-    const summerQuarters = quartersData.filter(q =>
-        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
-    );
+    // Summer and locked quarters aren't in academicQuarters; their courses
+    // count as completed once the sweep passes them chronologically.
+    const academicIds = new Set(academicQuarters.map(q => q.id));
+    const otherQuarters = quartersData.filter(q => q.id !== 'unassigned' && !academicIds.has(q.id));
     let tempCompleted = new Set();
-    summerQuarters.forEach(summerQuarter => {
-        summerQuarter.classes.forEach(courseId => tempCompleted.add(courseId));
-    });
 
     // Check each quarter to see what's blocking placement
     for (const quarter of academicQuarters) {
+        const order = getQuarterChronologicalOrder(quarter);
+        otherQuarters.forEach(q => {
+            if (getQuarterChronologicalOrder(q) < order) q.classes.forEach(c => tempCompleted.add(c));
+        });
         // Check if prerequisites would be satisfied
         const prereqsSatisfied = checkPrerequisitesSatisfied(courseNode, tempCompleted, graph);
 
         if (prereqsSatisfied) {
-            const wouldExceedUnits = quarter.units + course.units > PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+            const wouldExceedUnits = quarter.units + course.units > getEffectiveMaxUnitsPerQuarter();
 
             if (!wouldExceedUnits) hasUnitsCapacity = true;
         }
@@ -2405,29 +2468,23 @@ function autoPlanCoreCourses() {
     const categoryPlacedCounts = {};
     const categoryPlacedUnits = {};
 
-    // Summer + locked + pinned courses are pre-placed; their ids count as
-    // completed for prerequisite checks in subsequent quarters.
+    // Summer + locked + pinned courses are pre-placed. Summer and locked
+    // courses only count as completed for quarters chronologically after
+    // their own (see the quarter loop below) — otherwise a course in Summer
+    // Year 3 would satisfy prerequisites for Fall Year 1.
     const completed = new Set();
-    const summerQuarters = quartersData.filter(q =>
-        q.id !== 'unassigned' && q.name.toLowerCase().includes('summer')
+    const fixedQuarters = quartersData.filter(q =>
+        q.id !== 'unassigned' &&
+        (q.name.toLowerCase().includes('summer') || isQuarterLocked(q.id))
     );
-    summerQuarters.forEach(q => q.classes.forEach(id => {
-        completed.add(id);
+    fixedQuarters.forEach(q => q.classes.forEach(id => {
         if (graph[id]) {
             graph[id].placed = true;
             incrementCategoryCounts(graph[id].course, categoryPlacedCounts, categoryPlacedUnits);
         }
     }));
-    quartersData.forEach(q => {
-        if (q.id !== 'unassigned' && isQuarterLocked(q.id)) {
-            q.classes.forEach(id => {
-                completed.add(id);
-                if (graph[id]) {
-                    graph[id].placed = true;
-                    incrementCategoryCounts(graph[id].course, categoryPlacedCounts, categoryPlacedUnits);
-                }
-            });
-        }
+    const addFixedCoursesBefore = (order) => fixedQuarters.forEach(q => {
+        if (getQuarterChronologicalOrder(q) < order) q.classes.forEach(id => completed.add(id));
     });
     academicQuarters.forEach(q => {
         q.pinnedClasses.forEach(id => {
@@ -2443,7 +2500,7 @@ function autoPlanCoreCourses() {
         const reasons = [];
         if (!feasibility.unitsFeasible) {
             reasons.push(
-                `${feasibility.unplacedRequiredUnits} units of required courses vs ${feasibility.availableCapacity} ` +
+                `${feasibility.unplacedRequiredUnits} units of unplaced courses vs ${feasibility.availableCapacity} ` +
                 `units of capacity across ${feasibility.academicQuarterCount} quarters (short by ${feasibility.shortfall} units)`
             );
         }
@@ -2455,12 +2512,35 @@ function autoPlanCoreCourses() {
         }
         alert(
             `Course plan is infeasible: ${reasons.join('; ')}. Some courses will remain unassigned. ` +
-            `Consider increasing max units, adding quarters, or extending your target graduation date in Advanced Settings.`
+            `Consider raising max units in Advanced Settings, or choosing a longer Graduation Timeline in setup step 3.`
         );
     }
 
     // Compute priority scores once — they depend only on graph structure,
     // not on where courses end up.
+    // A pinned/fixed course's prerequisites (transitively) must land strictly
+    // before it. deadlineOrder[id] = earliest chronological order of any
+    // pre-placed course that depends on id.
+    const deadlineOrder = {};
+    quartersData.forEach(q => {
+        if (q.id === 'unassigned') return;
+        const order = getQuarterChronologicalOrder(q);
+        const stack = q.classes.filter(id => graph[id] && graph[id].placed);
+        const seen = new Set();
+        while (stack.length > 0) {
+            const node = graph[stack.pop()];
+            if (!node) continue;
+            // Only single-course entries force a deadline; in an OR-group no
+            // individual alternative is required.
+            node.prerequisites.filter(entry => prereqAlternatives(entry).length === 1).forEach(prereqId => {
+                if (seen.has(prereqId)) return;
+                seen.add(prereqId);
+                deadlineOrder[prereqId] = Math.min(deadlineOrder[prereqId] ?? Infinity, order);
+                stack.push(prereqId);
+            });
+        }
+    });
+
     const scores = new Map();
     Object.values(graph).forEach(node => {
         if (!node.placed) {
@@ -2473,6 +2553,7 @@ function autoPlanCoreCourses() {
     // feasible combinations, validate coreqs at the combination level, and
     // place the highest-scoring valid combination.
     for (const quarter of academicQuarters) {
+        addFixedCoursesBefore(getQuarterChronologicalOrder(quarter));
         const remainingBudget = getEffectiveMaxUnitsPerQuarter() - quarter.units;
         if (remainingBudget <= 0) {
             quarter.backupOptions = [];
@@ -2483,6 +2564,7 @@ function autoPlanCoreCourses() {
         const eligible = Object.values(graph)
             .filter(node => !node.placed && !completed.has(node.course.id))
             .filter(node => checkPrerequisitesSatisfied(node, completed, graph))
+            .filter(node => getQuarterChronologicalOrder(quarter) < (deadlineOrder[node.course.id] ?? Infinity))
             .filter(node => courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits))
             .sort((a, b) => scores.get(b.course.id) - scores.get(a.course.id));
 
@@ -2494,7 +2576,7 @@ function autoPlanCoreCourses() {
 
         const combos = generateUnitFeasibleCombinations(eligible, remainingBudget);
         const validCombos = combos
-            .filter(combo => combinationCoreqsSatisfied(combo, completed))
+            .filter(combo => combinationCoreqsSatisfied(combo, completed, quarter))
             .filter(combo => comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits));
 
         let bestCombo = [];
@@ -2554,10 +2636,10 @@ function autoPlanCoreCourses() {
     renderPlanner();
 }
 
-// Coreqs are satisfied if each course's coreqs are either already completed
-// or also in the proposed combination.
-function combinationCoreqsSatisfied(combo, completed) {
-    const inCombo = new Set(combo.map(n => n.course.id));
+// Coreqs are satisfied if each course's coreqs are already completed, already
+// in this quarter (pinned), or also in the proposed combination.
+function combinationCoreqsSatisfied(combo, completed, quarter) {
+    const inCombo = new Set([...combo.map(n => n.course.id), ...quarter.classes]);
     return combo.every(node =>
         node.corequisites.every(coreqId =>
             completed.has(coreqId) || inCombo.has(coreqId) || !graph[coreqId]
@@ -2720,7 +2802,8 @@ function saveToAccount() {
                 categoryPriority,
                 currentAcademicSystem,
                 dynamicSettings,
-                planningConfig: PLANNING_CONFIG
+                planningConfig: PLANNING_CONFIG,
+                requirementTargets
             },
             updated_at: new Date().toISOString()
         };
@@ -2755,6 +2838,13 @@ function loadFromAccount(options) {
                     return;
                 }
 
+                // On the automatic load at sign-in, don't overwrite local
+                // work that is newer than the account copy.
+                if (options.silent && localPlanSavedAt() > Date.parse(row.updated_at)) {
+                    showSuccessMessage('Kept this browser\'s plan — it\'s newer than your account copy. Save to Account to sync.');
+                    return;
+                }
+
                 ALL_CLASSES_DATA = row.course_data || [];
 
                 const plan = row.plan_data || {};
@@ -2768,6 +2858,19 @@ function loadFromAccount(options) {
                 if (settings.currentAcademicSystem) currentAcademicSystem = settings.currentAcademicSystem;
                 if (settings.dynamicSettings) Object.assign(dynamicSettings, settings.dynamicSettings);
                 if (settings.planningConfig) Object.assign(PLANNING_CONFIG, settings.planningConfig);
+                if (settings.requirementTargets) requirementTargets = settings.requirementTargets;
+
+                // Persist the loaded settings locally and refresh the setting
+                // controls, so a later settings change doesn't act on stale
+                // values (e.g. an old timeline wiping the loaded plan).
+                try {
+                    localStorage.setItem('academicSystem', currentAcademicSystem);
+                    localStorage.setItem('planningSpeed', planningSpeed);
+                } catch (e) { /* storage unavailable */ }
+                saveDynamicSettings();
+                persistCategoryPriority();
+                persistRequirementTargets();
+                syncTimelineControls();
 
                 graph = {};
                 renderPlanner();
@@ -2821,14 +2924,14 @@ function downloadPlan() {
         // Format corequisites
         const corequisites = courseData.corequisites.length > 0 ? courseData.corequisites.join(', ') : 'None';
 
-        // Escape quotes and commas in description for CSV
-        const description = (courseData.description || '').replace(/"/g, '""').replace(/,/g, ';');
-
-        // Get requirement satisfied
         const reqSatisfied = courseData.reqSatisfied || 'Required';
 
-        // Add row to CSV (quoted fields for safety)
-        csvContent += `"${takenValue}","${reqSatisfied}","${courseData.name}","${prerequisites}","${corequisites}","${description}",${courseData.units}\n`;
+        // Every field is quoted with embedded quotes doubled, so commas and
+        // line breaks survive a re-import. Course Number is the id (not the
+        // display name) because other rows' prerequisites reference the id.
+        const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+        csvContent += [takenValue, reqSatisfied, courseData.id, prerequisites, corequisites,
+            courseData.description || '', courseData.units].map(csvField).join(',') + '\n';
     });
     
     // Create and download the file
@@ -2863,6 +2966,8 @@ function processTakenCourses() {
     
     ALL_CLASSES_DATA.forEach(courseData => {
         if (courseData.enabled === false) return;
+        // Already placed (e.g. kept from the previous plan): leave it there
+        if (quartersData.some(q => q.id !== 'unassigned' && q.classes.includes(courseData.id))) return;
         console.log(`Course ${courseData.id}: taken = "${courseData.taken}"`);
 
         if (courseData.taken && courseData.taken !== '') {
@@ -2870,17 +2975,18 @@ function processTakenCourses() {
             console.log(`Parsed quarter ID for ${courseData.id}: ${quarterId}`);
             
             if (quarterId) {
-                // Remove from unassigned
-                const unassignedQuarter = getQuarterById('unassigned');
-                if (unassignedQuarter) {
-                    unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== courseData.id);
-                }
-                
-                // Add to target quarter and pin it
+                // Add to target quarter and pin it. If the quarter doesn't
+                // exist (e.g. "Fall, Year 5" in a 3-year plan), the course
+                // stays in Unassigned rather than vanishing.
                 const targetQuarter = getQuarterById(quarterId);
                 console.log(`Target quarter for ${courseData.id}:`, targetQuarter);
                 
                 if (targetQuarter) {
+                    const unassignedQuarter = getQuarterById('unassigned');
+                    if (unassignedQuarter) {
+                        unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== courseData.id);
+                    }
+
                     targetQuarter.classes.push(courseData.id);
                     targetQuarter.pinnedClasses.push(courseData.id);
                     pinnedCourses.add(courseData.id);
@@ -2990,11 +3096,14 @@ function lockQuarter(quarterId) {
         return;
     }
     
-    // Pin all courses in the quarter
+    // Pin all courses in the quarter, remembering which pins the lock added
+    // so unlocking doesn't remove pins the user set individually.
+    quarter.lockAddedPins = [];
     quarter.classes.forEach(classId => {
         if (!quarter.pinnedClasses.includes(classId)) {
             quarter.pinnedClasses.push(classId);
             pinnedCourses.add(classId);
+            quarter.lockAddedPins.push(classId);
         }
     });
     
@@ -3008,11 +3117,12 @@ function unlockQuarter(quarterId) {
     const quarter = getQuarterById(quarterId);
     if (!quarter) return;
     
-    // Unpin all courses in the quarter
-    quarter.classes.forEach(classId => {
+    // Unpin only the courses the lock itself pinned
+    (quarter.lockAddedPins || []).forEach(classId => {
         quarter.pinnedClasses = quarter.pinnedClasses.filter(id => id !== classId);
         pinnedCourses.delete(classId);
     });
+    quarter.lockAddedPins = [];
     
     lockedQuarters.delete(quarterId);
     renderPlanner();
@@ -3041,48 +3151,6 @@ function switchTab(tabName) {
 }
 
 // Add drag and drop functionality
-function setupDragAndDrop() {
-    const fileUploadArea = document.getElementById('fileUploadArea');
-    
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        fileUploadArea.addEventListener(eventName, preventDefaults, false);
-    });
-    
-    function preventDefaults(e) {
-        e.preventDefault();
-        e.stopPropagation();
-    }
-    
-    ['dragenter', 'dragover'].forEach(eventName => {
-        fileUploadArea.addEventListener(eventName, highlight, false);
-    });
-    
-    ['dragleave', 'drop'].forEach(eventName => {
-        fileUploadArea.addEventListener(eventName, unhighlight, false);
-    });
-    
-    function highlight(e) {
-        fileUploadArea.classList.add('dragover');
-    }
-    
-    function unhighlight(e) {
-        fileUploadArea.classList.remove('dragover');
-    }
-    
-    fileUploadArea.addEventListener('drop', handleDrop, false);
-    
-    function handleDrop(e) {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        
-        if (files.length > 0) {
-            const fileInput = document.getElementById('fileInput');
-            fileInput.files = files;
-            handleFileSelect({ target: fileInput });
-        }
-    }
-}
-
 // Settings Modal Functions
 function toggleSettingsModal() {
     const overlay = document.getElementById('settingsModalOverlay');
@@ -3308,7 +3376,18 @@ function loadSavedSettings() {
 }
 
 function initializeDynamicUI() {
-    // Set main UI values
+    syncTimelineControls();
+
+    // Calculate and update displays (totalUnitsNeeded is now calculated from course data)
+    updateDynamicSettings();
+    
+    // Always initialize quarters and render planner on initial load
+    initializeQuarters();
+    renderPlanner();
+}
+
+// Push the current academic system and timeline into the setup controls.
+function syncTimelineControls() {
     const academicSystemSelect = getElementByIdWithFallback('academicSystemNew', 'academicSystemMain');
     if (academicSystemSelect) {
         academicSystemSelect.value = currentAcademicSystem;
@@ -3330,13 +3409,6 @@ function initializeDynamicUI() {
         if (quartersSelect) quartersSelect.value = dynamicSettings.quartersToGraduate;
         if (customInput) customInput.style.display = 'none';
     }
-    
-    // Calculate and update displays (totalUnitsNeeded is now calculated from course data)
-    updateDynamicSettings();
-    
-    // Always initialize quarters and render planner on initial load
-    initializeQuarters();
-    renderPlanner();
 }
 
 function updateAcademicSystemUI() {
@@ -3420,7 +3492,11 @@ function calculateDynamicSettings() {
 
     // Dynamic calculations for balanced distribution
     const minUnits = 12; // Hard-set to 12 units
-    const maxUnits = Math.min(22, Math.ceil(unitsPerTerm * 1.06)); // Fine-tuned for balanced distribution
+    // Never below the minimum load or below the largest single course, or
+    // that course could never be scheduled.
+    const largestCourseUnits = activeCourses.reduce((max, c) => Math.max(max, c.units || 0), 0);
+    const maxUnits = Math.max(minUnits, largestCourseUnits,
+        Math.min(22, Math.ceil(unitsPerTerm * 1.06)));
     const targetUnits = Math.round(unitsPerTerm);
 
     return {
@@ -3459,9 +3535,10 @@ function updateDynamicSettings() {
         dynamicSettings.customQuarters :
         dynamicSettings.quartersToGraduate;
 
-    // If timeline changed, reinitialize quarters
+    // If timeline changed, rebuild the grid but keep placements in quarters
+    // that still exist
     if (newQuarters !== previousQuarters) {
-        initializeQuarters();
+        rebuildQuartersKeepingPlacements();
         renderPlanner();
     }
 
@@ -3517,8 +3594,12 @@ function updateAcademicSystem() {
         if (customInput) customInput.style.display = 'inline-block';
     }
     
-    // Update quarters - use dynamic calculation
+    // Term ids differ between systems, so start over from the Taken column
+    // (completed history) and clear pins/locks that pointed at old terms.
+    pinnedCourses = new Set();
+    lockedQuarters = new Set();
     initializeQuarters();
+    processTakenCourses();
     renderPlanner();
     
     // Recalculate dynamic settings
@@ -3526,6 +3607,30 @@ function updateAcademicSystem() {
     
     // Save to localStorage
     localStorage.setItem('academicSystem', currentAcademicSystem);
+}
+
+// Re-create quarters for a new timeline, carrying each course (and its pin)
+// over to the same quarter id when that quarter still exists. Courses in
+// removed quarters return to Unassigned; stale pins and locks are dropped.
+function rebuildQuartersKeepingPlacements() {
+    const previous = quartersData.filter(q => q.id !== 'unassigned');
+    initializeQuarters();
+    const unassigned = getQuarterById('unassigned');
+
+    previous.forEach(oldQuarter => {
+        const quarter = getQuarterById(oldQuarter.id);
+        if (!quarter) return;
+        const ids = oldQuarter.classes.filter(id => isActiveCourseId(id));
+        quarter.classes = ids;
+        quarter.pinnedClasses = (oldQuarter.pinnedClasses || []).filter(id => ids.includes(id));
+        quarter.lockAddedPins = (oldQuarter.lockAddedPins || []).filter(id => ids.includes(id));
+        quarter.units = ids.reduce((sum, id) => sum + (findClassById(id).units || 0), 0);
+        if (unassigned) unassigned.classes = unassigned.classes.filter(id => !ids.includes(id));
+    });
+
+    const stillPinned = new Set(quartersData.flatMap(q => q.pinnedClasses || []));
+    pinnedCourses = new Set([...pinnedCourses].filter(id => stillPinned.has(id)));
+    lockedQuarters = new Set([...lockedQuarters].filter(id => getQuarterById(id)));
 }
 
 function saveDynamicSettings() {
@@ -3538,8 +3643,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSavedSettings();
     loadRawDataColumnPrefs();
     initAccountAuth();
-
-    setupDragAndDrop();
 
     const dataUrlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
     if (dataUrlInput && dataUrlInput.value) {

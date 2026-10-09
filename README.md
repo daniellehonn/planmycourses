@@ -14,7 +14,7 @@ Given a CSV/TSV of courses (with prerequisites, corequisites, requirement catego
 - Lets the student drag and drop to override the plan, pin/lock courses and quarters, and see live dependency lines between prerequisite courses
 - Tracks requirement-category progress and exports the finished plan
 
-This is a **deterministic, rule-based planning engine** — there is currently no AI/LLM layer. All logic (graph construction, scoring, validation) runs client-side in the browser from an uploaded CSV; there is no backend or database.
+This is a **deterministic, rule-based planning engine** — there is currently no AI/LLM layer. All planning logic (graph construction, scoring, validation) runs client-side in the browser. Plans auto-save to the browser, and an optional Supabase account syncs your course list, plan, and settings across devices.
 
 ## Quick Start
 
@@ -31,15 +31,15 @@ Each row needs:
 
 | Column | Meaning |
 |---|---|
-| `Taken` | Quarter status, e.g. `Fall, Year 1` or `Not Assigned` |
-| `Req Satisfied` | Requirement category (`Lower Div`, `Major Core`, `5 Elective`, `GE`, etc.) |
+| `Taken` | A fixed placement, e.g. `Fall, Year 1`, or `Not Assigned`. The course is pinned to that term; Auto Plan never moves it but may add other courses to the same term. |
+| `Req Satisfied` | Requirement category (`Lower Div`, `Major Core`, `5 Elective`, `GE`, etc.). Separate several with commas — `ST, Stats & DS Minor` counts toward both `ST` and `Stats & DS Minor`. |
 | `Course Number` | Course ID, e.g. `CS 35L` |
-| `Prerequisites` | Comma-separated list, or `None`. Must match another row's Course Number exactly. |
-| `Corequisites` | Comma-separated list, or `None`. Placed in the same quarter automatically. |
+| `Prerequisites` | Comma-separated list, or `None`. Every entry is required; use `/` for alternatives (`CS 31 / CS 31E, MATH 31A` = one of CS 31 or CS 31E, and MATH 31A). Names must match another row's Course Number exactly. |
+| `Corequisites` | Comma-separated list, or `None`. Must be taken earlier or in the same quarter; each pair must list each other. |
 | `Description` | Course title/description |
-| `Difficulty` | 1–8 scale |
+| `Units` | Course units. If there's no `Units` column, the `Difficulty` column is used as units. |
 
-Prerequisite/corequisite lists are treated as `AND` — a course becomes eligible only once every listed course is completed or (for corequisites) scheduled in the same quarter.
+A course becomes eligible once every prerequisite entry is met (any one course in a `/` group). Prerequisites that point at a course disabled in the Raw Data view are ignored.
 
 ## How the scheduler decides what to take next
 
@@ -57,13 +57,12 @@ The planner is a **priority-based topological scheduler**, not a simple sort by 
      +  3 × elective_indirect_unlocks
      +  8 × longest_chain_length
      +  requirement_weight
-     +  offering_urgency_bonus
-     +  manual_priority_override
-     -  difficulty_penalty (difficulty × 2)
+     -  2 × units
    ```
 
-4. Requirement weights default to: Major Core (40) > Capstone (35) > Lower Div (30) > minor-pathway tiers (28/24/20) > 5 Elective (18) > TB (12) > GE (8) > Grad Level (5). These are user-adjustable via a drag-to-reorder priority list in Settings.
-5. Generate combinations of eligible courses (not just the top N) and pick the best-scoring combination that fits the unit budget (default max 18 / min 12 units).
+4. Requirement weights come from the category priority order in Advanced Settings (drag to reorder): ranks get 40, 35, 30, 28, 24, 20, 18, 12, 8, 5, then 3 less per rank (minimum 1). The default order is Major Core > Capstone > Lower Div > External > 5 Elective > TB > GE > Probability > Stats & DS Minor > ST > Grad Level. A course in several categories uses its highest weight.
+5. Generate combinations of up to 5 eligible courses and pick the best-scoring one that fits the remaining unit budget. Max units per term is derived from your course list and timeline (at least 12, and never below your largest course) unless you override it; Fastest mode adds 4.
+6. Summer terms, locked terms, and pinned courses are kept as-is. Their courses count as completed only for later terms, and a pinned course's prerequisites must be scheduled before it.
 
 **Bottleneck courses** — ones that unlock many future required courses (e.g. `CS 35L` → `CS 111`/`CS 131` → `CS 130`) — are prioritized over courses that are merely required but low-impact.
 
@@ -77,12 +76,12 @@ This section tracks the project against the four-version roadmap outlined by the
 | **V2 — Personalized optimization** | Weighted scoring, combinatorial quarter selection | Mostly built. Missing: multiple named plan variants (fastest / balanced / interest-focused / flexible-with-backups), interest-alignment and graduation-speed scoring terms, alternative-plan comparison UI |
 | **V3 — AI copilot** | Natural-language constraint parsing, planning chat | Not started |
 | **V4 — Recovery agent** | Handle unavailable courses, propose alternatives with trade-off explanations | Not started |
-| **Backend & database** | FastAPI services, Postgres persistence, plan versioning | Not started — currently a static, client-side-only app |
+| **Backend & database** | FastAPI services, Postgres persistence, plan versioning | Partial — optional Supabase auth + one `user_data` row per user (RLS); no plan versioning or server-side planning |
 | **Evaluation plan** | Benchmark suite, metrics, user study | Not started |
 
 ## Architecture (current)
 
-Pure static frontend — `index.html`, `styles.css`, `script.js`. No server, no database. Course data is loaded from a pasted TSV link or uploaded CSV and held entirely in browser memory/localStorage; there is no persistence of plan versions or user accounts across sessions.
+Static frontend — `index.html`, `styles.css`, `script.js` — served from GitHub Pages. Course data is loaded from a pasted TSV link or uploaded CSV. The plan auto-saves to localStorage on every change. Signing in (Supabase email auth, configured in `supabase-config.js`, schema in `supabase-schema.sql`) adds Save/Load to Account; on sign-in the account copy loads unless this browser has newer changes. There are no plan versions yet.
 
 ### Target architecture (per roadmap)
 
@@ -107,6 +106,7 @@ Planned backend services: Course Catalog Service, Degree Requirement Service, Pl
 ## Files
 
 - `index.html` / `styles.css` / `script.js` — the app
+- `supabase-config.js` / `supabase-schema.sql` — optional account sync (project URL + public key, and the `user_data` table with row-level security)
 - `course_scheduler_algorithm_spec.md` — detailed algorithm spec (priority scoring, workload balancing, edge cases)
 - `instructions.md` — end-user setup instructions for the Google Sheets template
 - `DANIELLEHON-FINAL_*.csv` — sample course list
