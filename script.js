@@ -66,7 +66,11 @@ const WORKLOAD_CONFIG = {
     // Per required course in a combination. Large enough that any eligible
     // required course outranks every optional one, so optional courses only
     // use capacity that required courses can't.
-    REQUIRED_COURSE_BONUS: 1000
+    REQUIRED_COURSE_BONUS: 1000,
+    // Per course of any kind. Larger than the most one course can add in
+    // workload penalties, so a course that fits is always placed rather
+    // than left out to keep a term lighter.
+    PLACEMENT_BONUS: 100
 };
 
 // Planning speed: 'balanced' (default) spreads workload evenly; 'fastest'
@@ -2024,6 +2028,7 @@ function scoreCombination(combo, quarter, scores) {
     const totalUnits = quarter.units + addedUnits;
 
     score += combo.filter(isRequiredCourse).length * workloadConfig.REQUIRED_COURSE_BONUS;
+    score += combo.length * workloadConfig.PLACEMENT_BONUS;
 
     // Over-difficulty penalty: total difficulty of what's already in the
     // quarter plus this combination

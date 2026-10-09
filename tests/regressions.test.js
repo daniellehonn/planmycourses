@@ -226,3 +226,9 @@ test('changing the timeline after planning says the plan is out of date', async 
     assert.match(status.text, /out of date/);
     assert.ok(status.actions.some(a => a.textContent === 'Re-plan now'));
 });
+
+test('the quick planner places a course whenever a term has room for it', async () => {
+    const planner = await createPlanner({}).load(SAMPLE);
+    planner.runHeuristic();
+    assert.deepEqual(planner.snapshot().unassigned, []);
+});
