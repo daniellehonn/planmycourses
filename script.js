@@ -101,118 +101,31 @@ function getElementByIdWithFallback(newId, oldId) {
     return document.getElementById(newId) || document.getElementById(oldId);
 }
 
+// Load from a pasted link to a published sheet (files load on pick, see
+// handleQuickFileSelect). Pins and locks are reset by processTSVData only
+// once the new data has loaded, so a failed fetch leaves the plan intact.
 async function loadCourseData() {
     const urlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
     const errorMessage = document.getElementById('errorMessage');
     const url = urlInput.value.trim();
-    
-    // Check if a file has been uploaded via the quick file input
-    const quickFileInput = document.getElementById('quickFileInput');
-    const hasUploadedFile = quickFileInput && quickFileInput.files.length > 0;
 
     try {
         document.body.classList.add('loading');
         errorMessage.style.display = 'none';
-
-        // Clear all pinned courses and do a hard reset
-        pinnedCourses.clear();
-        lockedQuarters.clear();
-        graph = {};
-
-        if (hasUploadedFile) {
-            // Load from uploaded file
-            const file = quickFileInput.files[0];
-
-            // Validate file extension
-            const fileNameStr = file.name.toLowerCase();
-            if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
-                throw new Error("Please select a CSV or TSV file (.csv, .tsv, or .txt extension)");
-            }
-            
-            const tsvData = await readFileAsText(file);
-            await processTSVData(tsvData);
-        } else if (url) {
-            // Load from URL
-            // Clear file uploaded state when loading from URL
-            const uploadButton = document.querySelector('.upload-icon-button');
-            if (uploadButton) uploadButton.classList.remove('file-uploaded');
-            updateFileNameDisplay(null);
-
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch data (status: ${response.status})`);
-            }
-
-            const tsvData = await response.text();
-            await processTSVData(tsvData);
-        } else {
-            throw new Error("Please either upload a TSV file or enter a valid URL");
+        if (!url) {
+            throw new Error("Paste a link to a published sheet, or upload a CSV file.");
         }
-        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`The link returned an error (status ${response.status}). Check that the sheet is published to the web.`);
+        }
+        const tsvData = await response.text();
+        graph = {};
+        await processTSVData(tsvData);
+        setDataSource('Google Sheet');
     } catch (error) {
         console.error("Error in loadCourseData:", error);
-        showError("Error loading data: " + error.message);
-        document.body.classList.remove('loading');
-    }
-}
-
-function handleFileSelect(event) {
-    const fileInput = event.target;
-    const loadFileButton = document.getElementById('loadFileButton');
-    const errorMessage = document.getElementById('errorMessage');
-    const fileInfo = document.getElementById('fileInfo');
-    const fileName = document.getElementById('fileName');
-    
-    if (fileInput.files.length > 0) {
-        const file = fileInput.files[0];
-        
-        // Check file extension
-        const fileNameStr = file.name.toLowerCase();
-        if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
-            showError("Please select a CSV or TSV file (.csv, .tsv, or .txt extension)");
-            loadFileButton.disabled = true;
-            fileInfo.style.display = 'none';
-            return;
-        }
-        
-        // Show file info
-        fileName.textContent = file.name;
-        fileInfo.style.display = 'flex';
-        loadFileButton.disabled = false;
-        errorMessage.style.display = 'none';
-    } else {
-        fileInfo.style.display = 'none';
-        loadFileButton.disabled = true;
-    }
-}
-
-async function loadCourseDataFromFile() {
-    const fileInput = document.getElementById('fileInput');
-    const errorMessage = document.getElementById('errorMessage');
-    
-    if (!fileInput.files.length) {
-        showError("Please select a file first");
-        return;
-    }
-    
-    const file = fileInput.files[0];
-    
-    try {
-        document.body.classList.add('loading');
-        errorMessage.style.display = 'none';
-
-        // Clear all pinned courses and do a hard reset
-        pinnedCourses.clear();
-        lockedQuarters.clear();
-        graph = {};
-
-        // Read file content
-        const tsvData = await readFileAsText(file);
-        await processTSVData(tsvData);
-        
-    } catch (error) {
-        console.error("Error in loadCourseDataFromFile:", error);
-        showError("Error loading file: " + error.message);
+        showError("Couldn't load that link. " + error.message);
         document.body.classList.remove('loading');
     }
 }
@@ -681,7 +594,8 @@ function renderPlanner() {
             lockButton.innerHTML = isQuarterLocked(quarter.id) ? 
                 '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="currentColor"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none"></path></svg>' : 
                 '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
-            lockButton.title = isQuarterLocked(quarter.id) ? 'Unlock quarter' : 'Lock quarter';
+            lockButton.title = isQuarterLocked(quarter.id) ? 'Unlock term' : 'Lock term (keep all its courses here)';
+            lockButton.setAttribute('aria-label', `${lockButton.title}: ${quarter.name}`);
             lockButton.onclick = (e) => {
                 e.stopPropagation();
                 toggleQuarterLock(quarter.id);
@@ -708,31 +622,18 @@ function renderPlanner() {
                 }
             });
 
-            if (quarter.backupOptions && quarter.backupOptions.length > 0) {
-                const backupsDiv = document.createElement('div');
-                backupsDiv.className = 'quarter-backups';
-
-                const label = document.createElement('span');
-                label.className = 'quarter-backups-label';
-                label.textContent = 'Backups:';
-                backupsDiv.appendChild(label);
-
-                quarter.backupOptions.forEach(backup => {
-                    const chip = document.createElement('span');
-                    chip.className = 'quarter-backup-chip';
-                    chip.textContent = backup.name;
-                    chip.title = `Next-best alternative if a placed course here becomes unavailable`;
-                    backupsDiv.appendChild(chip);
-                });
-
-                quarterDiv.appendChild(backupsDiv);
-            }
-
             quartersDiv.appendChild(quarterDiv);
         });
         yearDiv.appendChild(quartersDiv);
         yearsContainer.appendChild(yearDiv);
     }
+    const unassignedCount = document.getElementById('unassignedCount');
+    if (unassignedCount) {
+        const n = unassignedQuarter ? unassignedQuarter.classes.length : 0;
+        unassignedCount.textContent = n > 0 ? `(${n})` : '';
+    }
+    updateDataBar();
+
     addDragDropListeners();
     updateAllUnitCounts();
     updateRequirementProgress(); // Update requirement progress dashboard
@@ -817,49 +718,6 @@ function updateUnitsInPlanCounter() {
 
 // Raw Data view — an editable snapshot of ALL_CLASSES_DATA. Nothing here
 // affects the plan until applyRawDataToPlanner() is clicked.
-let rawDataHiddenColumns = new Set();
-
-function loadRawDataColumnPrefs() {
-    try {
-        const saved = localStorage.getItem('rawDataHiddenColumns');
-        if (saved) rawDataHiddenColumns = new Set(JSON.parse(saved));
-    } catch (e) {
-        rawDataHiddenColumns = new Set();
-    }
-}
-
-function toggleColumnPicker() {
-    const menu = document.getElementById('columnPickerMenu');
-    menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
-}
-
-function handleColumnToggle(field, checked) {
-    if (checked) {
-        rawDataHiddenColumns.delete(field);
-    } else {
-        rawDataHiddenColumns.add(field);
-    }
-    localStorage.setItem('rawDataHiddenColumns', JSON.stringify(Array.from(rawDataHiddenColumns)));
-    applyColumnVisibility();
-}
-
-function applyColumnVisibility() {
-    const table = document.querySelector('.raw-data-table');
-    if (table) table.setAttribute('data-hide', Array.from(rawDataHiddenColumns).join(' '));
-
-    document.querySelectorAll('#columnPickerMenu input[data-col-toggle]').forEach(checkbox => {
-        checkbox.checked = !rawDataHiddenColumns.has(checkbox.dataset.colToggle);
-    });
-}
-
-document.addEventListener('click', (e) => {
-    const picker = document.querySelector('.column-picker');
-    const menu = document.getElementById('columnPickerMenu');
-    if (picker && menu && menu.style.display !== 'none' && !picker.contains(e.target)) {
-        menu.style.display = 'none';
-    }
-});
-
 function switchToView(view) {
     const plannerView = document.getElementById('plannerView');
     const rawView = document.getElementById('rawDataView');
@@ -872,7 +730,6 @@ function switchToView(view) {
         tabPlanner.classList.remove('active');
         tabRaw.classList.add('active');
         renderRawDataTable();
-        applyColumnVisibility();
     } else {
         plannerView.style.display = 'block';
         rawView.style.display = 'none';
@@ -1017,83 +874,61 @@ function applyRawDataToPlanner() {
 function createClassCard(classData) {
     const card = document.createElement('div');
     card.className = 'class-card';
-    card.id = `class-${classData.id.replace(/\s+/g, '-')}`; 
+    card.id = `class-${classData.id.replace(/\s+/g, '-')}`;
     card.draggable = true;
     card.dataset.classId = classData.id;
-    
-    // Apply custom color if set - will be handled after card content is populated
-    
-    // Add pinned class if course is pinned
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `${classData.name}, ${classData.units} units. Open details`);
+
     if (isPinnedCourse(classData.id)) {
         card.classList.add('pinned');
     }
-    
-    const prereqsText = escapeHtml(classData.prerequisites.join(', ') || 'None');
-    const coreqsText = escapeHtml(classData.corequisites.join(', ') || 'None');
-    
-    // Create structured tooltip content
-    let tooltipContent = `
-        <span class="course-title">${escapeHtml(classData.description || 'No description available')}</span>
-        <div class="course-req">
-            <span class="req-label">Requirement:</span>
-            <span class="req-value">${escapeHtml(classData.reqSatisfied || 'Required')}</span>
-        </div>
-        <div class="course-prereqs">
-            <span class="prereq-label">Prerequisites:</span>
-            <span class="prereq-list">${prereqsText}</span>
-        </div>
-        <div class="course-coreqs">
-            <span class="coreq-label">Corequisites:</span>
-            <span class="coreq-list">${coreqsText}</span>
-        </div>
-    `;
-
-
-    let planningNote = "";
     if (graph[classData.id] && graph[classData.id].unassignedReason) {
-        planningNote = graph[classData.id].unassignedReason;
         card.classList.add('class-card-unassigned-failed');
     }
 
-    if (planningNote) {
-        const noteClass = card.classList.contains('class-card-unassigned-failed') ? 'warning' : '';
-        tooltipContent += `<div class="planning-note ${noteClass}">
-            <strong>Planning Note:</strong> ${escapeHtml(planningNote)}
-            <p>Try playing around with the max units to get your desired results!</p>
-        </div>`;
-    }
+    const code = document.createElement('span');
+    code.className = 'card-code';
+    code.textContent = classData.name;
+    const title = document.createElement('span');
+    title.className = 'card-title';
+    title.textContent = classData.description || '';
+    const units = document.createElement('span');
+    units.className = 'units';
+    units.textContent = `${classData.units} unit${classData.units === 1 ? '' : 's'}`;
+    card.append(code, title, units);
 
-    // Create pin button (thumbtack icon, filled when pinned)
+    // Pin button (thumbtack icon, filled when pinned)
     const pinButton = document.createElement('button');
+    pinButton.type = 'button';
     pinButton.className = 'pin-button';
     pinButton.innerHTML = isPinnedCourse(classData.id)
         ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 3a1 1 0 0 1 1 1v5.17l2.83 2.83a1 1 0 0 1-.71 1.71H13v6a1 1 0 1 1-2 0v-6H4.88a1 1 0 0 1-.71-1.71L7 9.17V4a1 1 0 0 1 1-1h8z"/></svg>'
         : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 3a1 1 0 0 1 1 1v5.17l2.83 2.83a1 1 0 0 1-.71 1.71H13v6a1 1 0 1 1-2 0v-6H4.88a1 1 0 0 1-.71-1.71L7 9.17V4a1 1 0 0 1 1-1h8z"/></svg>';
-    pinButton.title = isPinnedCourse(classData.id) ? 'Unpin course' : 'Pin course';
+    pinButton.title = isPinnedCourse(classData.id) ? 'Unpin course' : 'Pin course to this term';
+    pinButton.setAttribute('aria-label', pinButton.title);
     pinButton.onclick = (e) => {
         e.stopPropagation();
         e.preventDefault();
         handlePinToggle(classData.id);
     };
-
-    // Get category color for the card's left-edge accent
-    const categoryColor = getCategoryColor(classData.reqSatisfied);
-
-    card.innerHTML = `
-        ${escapeHtml(classData.name)}
-        <span class="units">(${classData.units} units)</span>
-        <span class="tooltip">${tooltipContent}</span>
-    `;
-
     card.appendChild(pinButton);
 
     // Category reads as a quiet left-edge accent, not a full-card recolor
+    const categoryColor = getCategoryColor(classData.reqSatisfied);
     if (categoryColor) {
         card.style.setProperty('--card-accent', categoryColor.border);
     }
 
-    // Add double-click event listener to the card for editing
-    card.addEventListener('dblclick', handleCardDoubleClick);
+    // Click (or Enter) opens details — also the way to move courses on touch
+    card.addEventListener('click', () => openCourseDetails(classData.id));
+    card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openCourseDetails(classData.id);
+        }
+    });
 
     return card;
 }
@@ -1201,7 +1036,15 @@ function updateRequirementProgress() {
         `;
     });
 
-    dashboardContainer.innerHTML = dashboardHTML;
+    dashboardContainer.innerHTML = dashboardHTML ||
+        '<p class="requirements-empty">Load a course list to see requirement progress.</p>';
+
+    const summary = document.getElementById('requirementsSummary');
+    if (summary) {
+        const complete = sortedCategories.filter(([, stats]) => stats.total > 0 && stats.assigned >= stats.total).length;
+        summary.textContent = sortedCategories.length > 0
+            ? `${complete} of ${sortedCategories.length} complete` : '';
+    }
 }
 
 function handleFieldEdit(event) {
@@ -1209,14 +1052,200 @@ function handleFieldEdit(event) {
 }
 
 
-function handleCardDoubleClick(event) {
-    const card = event.currentTarget;
-    const classId = card.dataset.classId;
-    const course = ALL_CLASSES_DATA.find(c => c.id === classId);
-    
-    if (course) {
-        showEditModal(course);
+// ----- Course details panel -----
+let detailsCourseId = null;
+
+function openCourseDetails(classId) {
+    const course = findClassById(classId);
+    if (!course) return;
+    detailsCourseId = classId;
+    renderCourseDetails();
+    document.getElementById('courseDetailsOverlay').classList.add('active');
+    document.getElementById('courseDetailsMoveSelect').focus();
+}
+
+function closeCourseDetails() {
+    document.getElementById('courseDetailsOverlay').classList.remove('active');
+    const card = detailsCourseId && document.querySelector(`[data-class-id="${CSS.escape(detailsCourseId)}"]`);
+    detailsCourseId = null;
+    if (card) card.focus();
+}
+
+function renderCourseDetails() {
+    const course = findClassById(detailsCourseId);
+    if (!course) return;
+    const currentQuarter = quartersData.find(q => q.classes.includes(course.id));
+    const placed = currentQuarter && currentQuarter.id !== 'unassigned';
+
+    document.getElementById('courseDetailsTitle').textContent = course.name;
+    const meta = [`${course.units} units`];
+    if (course.difficulty != null && course.difficulty !== course.units) meta.push(`difficulty ${course.difficulty}`);
+    meta.push(getCourseCategories(course).join(', ') || 'Required');
+    meta.push(placed ? currentQuarter.name : 'Unassigned');
+    if (isPinnedCourse(course.id)) meta.push('pinned');
+    document.getElementById('courseDetailsMeta').textContent = meta.join(' · ');
+    document.getElementById('courseDetailsDescription').textContent = course.description || '';
+
+    // Why it's unassigned, or what's wrong with where it is
+    let note = '';
+    if (!placed && graph[course.id] && graph[course.id].unassignedReason) {
+        note = graph[course.id].unassignedReason;
+    } else if (placed) {
+        const check = validateCoursePlacement(course.id, currentQuarter.id, { ignoreUnits: true });
+        if (!check.isValid) note = check.reason;
     }
+    const noteEl = document.getElementById('courseDetailsNote');
+    noteEl.textContent = note;
+    noteEl.hidden = !note;
+
+    const unlocks = ALL_CLASSES_DATA.filter(c => c.enabled !== false && allPrereqIds(c).includes(course.id)).map(c => c.name);
+    document.getElementById('courseDetailsPrereqs').textContent = course.prerequisites.join(', ') || 'None';
+    document.getElementById('courseDetailsCoreqs').textContent = course.corequisites.join(', ') || 'None';
+    document.getElementById('courseDetailsUnlocks').textContent = unlocks.join(', ') || 'Nothing';
+
+    const select = document.getElementById('courseDetailsMoveSelect');
+    select.innerHTML = '';
+    const sorted = quartersData
+        .filter(q => q.id !== 'unassigned')
+        .sort((a, b) => getQuarterChronologicalOrder(a) - getQuarterChronologicalOrder(b));
+    [getQuarterById('unassigned'), ...sorted].forEach(q => {
+        if (!q) return;
+        const option = document.createElement('option');
+        option.value = q.id;
+        const locked = isQuarterLocked(q.id);
+        option.textContent = q.id === 'unassigned' ? 'Unassigned'
+            : `${q.name} · ${q.units} units${locked ? ' (locked)' : ''}`;
+        option.disabled = locked && q !== currentQuarter;
+        option.selected = q === currentQuarter;
+        select.appendChild(option);
+    });
+
+    document.getElementById('courseDetailsMoveMessage').hidden = true;
+
+    const pinButton = document.getElementById('courseDetailsPinButton');
+    pinButton.textContent = isPinnedCourse(course.id) ? 'Unpin' : 'Pin to this term';
+    pinButton.disabled = !placed;
+    pinButton.onclick = () => {
+        handlePinToggle(course.id);
+        renderCourseDetails();
+    };
+    document.getElementById('courseDetailsEditButton').onclick = () => {
+        closeCourseDetails();
+        showEditModal(course);
+    };
+}
+
+function moveCourseFromDetails() {
+    const targetId = document.getElementById('courseDetailsMoveSelect').value;
+    const result = moveCourse(detailsCourseId, targetId);
+    renderCourseDetails();
+    const messageEl = document.getElementById('courseDetailsMoveMessage');
+    messageEl.textContent = result.message || (result.moved ? 'Moved.' : '');
+    messageEl.classList.toggle('is-warning', !!result.message);
+    messageEl.hidden = !messageEl.textContent;
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('courseDetailsOverlay')?.classList.contains('active')) closeCourseDetails();
+    else if (document.getElementById('settingsModalOverlay')?.classList.contains('active')) closeSettingsModal();
+});
+
+// ----- Inline status line (replaces alert() pop-ups) -----
+// kind: 'success' | 'warning' | 'error'; actions: [{ label, onClick }]
+function showPlanStatus(message, kind = 'success', actions = []) {
+    const el = document.getElementById('planStatus');
+    if (!el) return;
+    el.className = `plan-status is-${kind}`;
+    el.innerHTML = '';
+    const text = document.createElement('span');
+    text.className = 'plan-status-text';
+    text.textContent = message;
+    el.appendChild(text);
+    actions.forEach(action => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'link-button';
+        button.textContent = action.label;
+        button.onclick = action.onClick;
+        el.appendChild(button);
+    });
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.className = 'plan-status-dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss');
+    dismiss.textContent = '×';
+    dismiss.onclick = clearPlanStatus;
+    el.appendChild(dismiss);
+    el.hidden = false;
+}
+
+function clearPlanStatus() {
+    const el = document.getElementById('planStatus');
+    if (el) el.hidden = true;
+}
+
+// Summarize an auto-plan run: everything placed, or what didn't fit and
+// one-click ways to make room.
+function reportPlanOutcome(run) {
+    const nodes = Object.values(graph);
+    const notNeeded = nodes.filter(n => !n.placed && n.unassignedReason.startsWith('Not needed'));
+    const unplaced = nodes.filter(n => !n.placed && !n.unassignedReason.startsWith('Not needed'));
+    const lastTerm = quartersData
+        .filter(q => q.id !== 'unassigned' && q.classes.length > 0)
+        .sort((a, b) => getQuarterChronologicalOrder(b) - getQuarterChronologicalOrder(a))[0];
+    const finish = lastTerm ? ` Last term: ${lastTerm.name}.` : '';
+    const skipped = notNeeded.length > 0
+        ? ` ${notNeeded.length} left out because their requirement is already met.` : '';
+
+    if (unplaced.length === 0) {
+        showPlanStatus(`Every course fits.${finish}${skipped}`, 'success');
+        return;
+    }
+
+    const requiredLeft = unplaced.filter(isRequiredCourse).length;
+    let message = `${unplaced.length} course${unplaced.length === 1 ? '' : 's'} didn't fit`;
+    if (requiredLeft > 0) message += `, including ${requiredLeft} required`;
+    message += '.';
+    const f = run.feasibility;
+    if (f && !f.unitsFeasible) message += ` The open terms are ${f.shortfall} units short.`;
+    if (f && !f.timelineFeasible) message += ` The longest prerequisite chain needs ${f.minQuartersForLongestChain} terms; ${f.academicQuarterCount} are open.`;
+    message += ' See Unassigned for why.';
+
+    const actions = [];
+    const timeline = document.getElementById('quartersToGraduateNew');
+    if (timeline && timeline.options && timeline.value !== 'custom' && timeline.selectedIndex < timeline.options.length - 2) {
+        actions.push({ label: 'Add a year and re-plan', onClick: () => {
+            timeline.selectedIndex += 1;
+            updateDynamicSettings();
+            autoPlanCoreCourses();
+        } });
+    }
+    const maxNow = PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+    actions.push({ label: `Raise max to ${maxNow + 2} units and re-plan`, onClick: () => {
+        handleMaxUnitsQuickChange(maxNow + 2);
+        autoPlanCoreCourses();
+    } });
+    showPlanStatus(message, 'warning', actions);
+}
+
+// ----- Max units in the toolbar (blank = automatic) -----
+function handleMaxUnitsQuickChange(value) {
+    const n = parseInt(value);
+    if (Number.isFinite(n) && n > 0) {
+        PLANNING_CONFIG.MAX_UNITS_PER_QUARTER = n;
+        PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER = true;
+    } else {
+        PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER = false;
+    }
+    updateDynamicSettings();
+}
+
+function syncMaxUnitsQuick() {
+    const input = document.getElementById('maxUnitsQuick');
+    if (!input) return;
+    input.value = PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER ? PLANNING_CONFIG.MAX_UNITS_PER_QUARTER : '';
+    input.placeholder = `Auto (${PLANNING_CONFIG.MAX_UNITS_PER_QUARTER})`;
 }
 
 function showEditModal(course) {
@@ -1314,13 +1343,13 @@ function handlePinToggle(classId) {
             // Check if the course is currently marked as invalid (red)
             const cardElement = document.getElementById(`class-${classId.replace(/\s+/g, '-')}`);
             if (cardElement && cardElement.classList.contains('invalid')) {
-                alert('Cannot pin courses with unmet prerequisites (red courses). Please resolve prerequisite issues first.');
+                showPlanStatus(`Can't pin ${classId}: a prerequisite isn't scheduled before it. Fix that first.`, 'error');
                 return;
             }
             
             pinCourse(classId, currentQuarter.id);
         } else {
-            alert('Cannot pin courses in unassigned section. Please move the course to a quarter first.');
+            showPlanStatus('Move the course into a term before pinning it.', 'error');
         }
     }
 }
@@ -1553,22 +1582,27 @@ function handleDrop(e) {
     targetDropZoneEl.classList.remove('drop-target-hover');
     const classId = e.dataTransfer.getData('text/plain');
     const targetQuarterId = targetDropZoneEl.id === 'unassignedClasses' ? 'unassigned' : targetDropZoneEl.dataset.quarterId;
-    
+
+    const result = moveCourse(classId, targetQuarterId);
+    if (result.message) {
+        showConflictMessage(result.message, e.clientX, e.clientY);
+    }
+}
+
+// Move a course to a quarter (or 'unassigned'). Used by drag and drop and by
+// the course details panel. Returns { moved, message }: the move is refused
+// for locked quarters; it goes ahead with a message when it breaks a
+// prerequisite (the card turns red).
+function moveCourse(classId, targetQuarterId) {
     const originalQuarter = quartersData.find(q => q.classes.includes(classId));
     const newQuarter = getQuarterById(targetQuarterId);
-    if (!newQuarter || originalQuarter === newQuarter) return;
+    if (!newQuarter || originalQuarter === newQuarter) return { moved: false, message: '' };
 
     if ((originalQuarter && isQuarterLocked(originalQuarter.id)) || isQuarterLocked(targetQuarterId)) {
-        showConflictMessage('Unlock the quarter first to move courses in or out of it.', e.clientX, e.clientY);
-        return;
+        return { moved: false, message: 'Unlock the term first to move courses in or out of it.' };
     }
 
-    // Placement is allowed even when it breaks a prerequisite (the card turns
-    // red), but tell the user why.
     const validationResult = validateCoursePlacement(classId, targetQuarterId);
-    if (!validationResult.isValid) {
-        showConflictMessage(validationResult.reason, e.clientX, e.clientY);
-    }
 
     if (originalQuarter) {
         originalQuarter.classes = originalQuarter.classes.filter(id => id !== classId);
@@ -1586,10 +1620,15 @@ function handleDrop(e) {
     newQuarter.classes.push(classId);
     if (graph[classId]) graph[classId].unassignedReason = '';
 
+    // The last Auto Plan summary no longer describes the plan
+    clearPlanStatus();
     renderPlanner();
+    return { moved: true, message: validationResult.isValid ? '' : validationResult.reason };
 }
 
-function validateCoursePlacement(classId, targetQuarterId) {
+// options.ignoreUnits: check only prerequisites/corequisites (used to explain
+// a course that's already in the quarter).
+function validateCoursePlacement(classId, targetQuarterId, options = {}) {
     if (targetQuarterId === 'unassigned') {
         return { isValid: true, reason: '' };
     }
@@ -1622,6 +1661,10 @@ function validateCoursePlacement(classId, targetQuarterId) {
             const coreqName = coreqCourse ? coreqCourse.id : coreqId;
             return { isValid: false, reason: `Missing corequisite: ${coreqName} (take it earlier or in the same quarter)` };
         }
+    }
+
+    if (options.ignoreUnits) {
+        return { isValid: true, reason: '' };
     }
 
     // Check unit limits
@@ -2025,7 +2068,6 @@ function loadCategoryPriorityUI() {
     if (!list) return;
 
     syncCategoryPriorityWithData();
-    const weights = deriveRequirementWeights();
 
     list.innerHTML = '';
     categoryPriority.forEach((category, index) => {
@@ -2046,15 +2088,9 @@ function loadCategoryPriorityUI() {
         name.className = 'category-name';
         name.textContent = category;
 
-        const weight = document.createElement('span');
-        weight.className = 'category-weight';
-        weight.textContent = `weight ${weights[category] ?? 1}`;
-        weight.title = 'Contribution to the priority score for courses in this category. Drag to reorder; the value follows the rank.';
-
         li.appendChild(handle);
         li.appendChild(rank);
         li.appendChild(name);
-        li.appendChild(weight);
         attachCategoryDragHandlers(li);
 
         list.appendChild(li);
@@ -2447,7 +2483,7 @@ function generateUnassignedReason(courseNode, academicQuarters, graph) {
     }
 
     if (!hasUnitsCapacity) {
-        return "Blocked by unit capacity. Try increasing max units in Advanced Settings.";
+        return "No term has room for it. Raise max units per term, or add a year.";
     }
 
     return "No suitable quarter (capacity/schedule).";
@@ -2719,8 +2755,6 @@ function preparePlanningRun() {
     });
 
     const feasibility = checkPlanningFeasibility(academicQuarters, graph);
-    reportInfeasibility(feasibility);
-
     // Compute priority scores once — they depend only on graph structure,
     // not on where courses end up.
     const scores = new Map();
@@ -2732,29 +2766,8 @@ function preparePlanningRun() {
 
     return {
         academicQuarters, addFixedCoursesBefore, completed,
-        categoryPlacedCounts, categoryPlacedUnits, scores
+        categoryPlacedCounts, categoryPlacedUnits, scores, feasibility
     };
-}
-
-function reportInfeasibility(feasibility) {
-    if (feasibility.feasible) return;
-    const reasons = [];
-    if (!feasibility.unitsFeasible) {
-        reasons.push(
-            `${feasibility.unplacedRequiredUnits} units of unplaced courses vs ${feasibility.availableCapacity} ` +
-            `units of capacity across ${feasibility.academicQuarterCount} quarters (short by ${feasibility.shortfall} units)`
-        );
-    }
-    if (!feasibility.timelineFeasible) {
-        reasons.push(
-            `the longest prerequisite chain needs ${feasibility.minQuartersForLongestChain} quarters but only ` +
-            `${feasibility.academicQuarterCount} remain before your target graduation date`
-        );
-    }
-    alert(
-        `Course plan is infeasible: ${reasons.join('; ')}. Some courses will remain unassigned. ` +
-        `Consider raising max units in Advanced Settings, or choosing a longer Graduation Timeline in setup step 3.`
-    );
 }
 
 // Heuristic planner: greedy quarter-by-quarter sweep. Used when the optimal
@@ -2881,6 +2894,7 @@ function finishPlanningRun(run) {
 
     finalizeUnassignedCourses(graph);
     renderPlanner();
+    reportPlanOutcome(run);
 }
 
 // Coreqs are satisfied if each course's coreqs are already completed, already
@@ -3046,6 +3060,7 @@ function saveToAccount() {
             },
             settings: {
                 planningSpeed,
+                plannerEngine,
                 categoryPriority,
                 currentAcademicSystem,
                 dynamicSettings,
@@ -3101,6 +3116,7 @@ function loadFromAccount(options) {
 
                 const settings = row.settings || {};
                 if (settings.planningSpeed) planningSpeed = settings.planningSpeed;
+                if (settings.plannerEngine) plannerEngine = settings.plannerEngine;
                 if (settings.categoryPriority) categoryPriority = settings.categoryPriority;
                 if (settings.currentAcademicSystem) currentAcademicSystem = settings.currentAcademicSystem;
                 if (settings.dynamicSettings) Object.assign(dynamicSettings, settings.dynamicSettings);
@@ -3113,14 +3129,17 @@ function loadFromAccount(options) {
                 try {
                     localStorage.setItem('academicSystem', currentAcademicSystem);
                     localStorage.setItem('planningSpeed', planningSpeed);
+                    localStorage.setItem('plannerEngine', plannerEngine);
                 } catch (e) { /* storage unavailable */ }
                 saveDynamicSettings();
                 persistCategoryPriority();
                 persistRequirementTargets();
                 syncTimelineControls();
+                syncMaxUnitsQuick();
 
                 graph = {};
                 renderPlanner();
+                setDataSource('From your account');
 
                 if (!options.silent) {
                     closeAccountModal();
@@ -3135,19 +3154,17 @@ function loadFromAccount(options) {
 function toggleSidebar() {
     const sidebar = document.getElementById('instructionsSidebar');
     const overlay = document.getElementById('sidebarOverlay');
-    
-    if (sidebar.classList.contains('open')) {
-        sidebar.classList.remove('open');
-        overlay.classList.remove('active');
-    } else {
-        sidebar.classList.add('open');
-        overlay.classList.add('active');
-    }
+    const open = !sidebar.classList.contains('open');
+    sidebar.classList.toggle('open', open);
+    overlay.classList.toggle('active', open);
+    // Keep the off-screen panel out of keyboard and screen-reader reach
+    sidebar.inert = !open;
+    if (open) sidebar.querySelector('.sidebar-close').focus();
 }
 
 function downloadPlan() {
     if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) {
-        alert('No course data loaded. Please load course data first.');
+        showPlanStatus('Load a course list before exporting.', 'error');
         return;
     }
 
@@ -3194,7 +3211,7 @@ function downloadPlan() {
         link.click();
         document.body.removeChild(link);
     } else {
-        alert('Download not supported in this browser. Please try a different browser.');
+        showPlanStatus("This browser can't download files. Try a different browser.", 'error');
     }
 }
 
@@ -3339,7 +3356,7 @@ function lockQuarter(quarterId) {
     });
     
     if (hasInvalidCourses) {
-        alert('Cannot lock quarter with courses that have unmet prerequisites (red courses). Please resolve prerequisite issues first.');
+        showPlanStatus("Can't lock this term: some of its courses are missing prerequisites (shown in red).", 'error');
         return;
     }
     
@@ -3430,14 +3447,14 @@ function loadCurrentSettings() {
         academicSystemSelect.value = currentAcademicSystem;
     }
 
-    // Load advanced settings (show current values or empty for dynamic)
-    const maxUnitsInput = document.getElementById('maxUnits');
+    // Show overridden values; blank means automatic (shown as placeholder).
+    // Max units lives in the toolbar.
     const minUnitsInput = document.getElementById('minUnits');
     const targetUnitsInput = document.getElementById('targetUnits');
+    minUnitsInput.placeholder = `Auto (${PLANNING_CONFIG.MIN_UNITS_PER_QUARTER})`;
+    targetUnitsInput.placeholder = `Auto (${PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER})`;
+    document.getElementById('settingsError').style.display = 'none';
 
-    // Only show values if they are overridden
-    maxUnitsInput.value = PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER ?
-        PLANNING_CONFIG.MAX_UNITS_PER_QUARTER : '';
     minUnitsInput.value = PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER ?
         PLANNING_CONFIG.MIN_UNITS_PER_QUARTER : '';
     targetUnitsInput.value = PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER ?
@@ -3445,6 +3462,8 @@ function loadCurrentSettings() {
 
     const speedRadio = document.querySelector(`input[name="planningSpeed"][value="${planningSpeed}"]`);
     if (speedRadio) speedRadio.checked = true;
+    const engineRadio = document.querySelector(`input[name="plannerEngine"][value="${plannerEngine}"]`);
+    if (engineRadio) engineRadio.checked = true;
     updatePlanningSpeedToggleUI();
 }
 
@@ -3456,22 +3475,13 @@ function updatePlanningSpeedToggleUI() {
 }
 
 function saveSettings() {
-    // Get values from advanced settings
-    const maxUnitsInput = document.getElementById('maxUnits');
+    // Get values from advanced settings (max units is set in the toolbar)
     const minUnitsInput = document.getElementById('minUnits');
     const targetUnitsInput = document.getElementById('targetUnits');
 
     // Update overrides and values
     const newConfig = {};
     const newOverrides = {};
-
-    // Max Units
-    if (maxUnitsInput.value.trim() !== '') {
-        newConfig.MAX_UNITS_PER_QUARTER = parseInt(maxUnitsInput.value);
-        newOverrides.MAX_UNITS_PER_QUARTER = true;
-    } else {
-        newOverrides.MAX_UNITS_PER_QUARTER = false;
-    }
 
     // Min Units
     if (minUnitsInput.value.trim() !== '') {
@@ -3492,20 +3502,19 @@ function saveSettings() {
     // Validate settings
     const finalMinUnits = newOverrides.MIN_UNITS_PER_QUARTER ?
         newConfig.MIN_UNITS_PER_QUARTER : PLANNING_CONFIG.MIN_UNITS_PER_QUARTER;
-    const finalMaxUnits = newOverrides.MAX_UNITS_PER_QUARTER ?
-        newConfig.MAX_UNITS_PER_QUARTER : PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
+    const finalMaxUnits = PLANNING_CONFIG.MAX_UNITS_PER_QUARTER;
     const finalTargetUnits = newOverrides.TARGET_UNITS_PER_QUARTER ?
         newConfig.TARGET_UNITS_PER_QUARTER : PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER;
 
-    if (finalMinUnits > finalMaxUnits) {
-        alert('Minimum units cannot be greater than maximum units.');
+    const settingsError = document.getElementById('settingsError');
+    if (finalMinUnits > finalMaxUnits || finalTargetUnits > finalMaxUnits) {
+        settingsError.textContent = finalMinUnits > finalMaxUnits
+            ? `Min units (${finalMinUnits}) can't be more than max units (${finalMaxUnits}).`
+            : `Target units (${finalTargetUnits}) can't be more than max units (${finalMaxUnits}).`;
+        settingsError.style.display = 'block';
         return;
     }
-
-    if (finalTargetUnits > finalMaxUnits) {
-        alert('Target units cannot be greater than maximum units.');
-        return;
-    }
+    settingsError.style.display = 'none';
     
     // Apply settings
     Object.assign(PLANNING_CONFIG, newConfig);
@@ -3513,6 +3522,8 @@ function saveSettings() {
 
     const checkedSpeedRadio = document.querySelector('input[name="planningSpeed"]:checked');
     planningSpeed = checkedSpeedRadio ? checkedSpeedRadio.value : 'balanced';
+    const checkedEngineRadio = document.querySelector('input[name="plannerEngine"]:checked');
+    plannerEngine = checkedEngineRadio ? checkedEngineRadio.value : 'optimal';
 
     // Recalculate dynamic settings for non-overridden values
     updateDynamicSettings();
@@ -3521,28 +3532,25 @@ function saveSettings() {
     localStorage.setItem('planningConfig', JSON.stringify(PLANNING_CONFIG));
     localStorage.setItem('dynamicSettings', JSON.stringify(dynamicSettings));
     localStorage.setItem('planningSpeed', planningSpeed);
+    localStorage.setItem('plannerEngine', plannerEngine);
 
     closeSettingsModal();
-    
-    // Show success message
-    showSuccessMessage('Advanced settings saved successfully!');
+    showSuccessMessage('Settings saved. Run Auto Plan to apply them.');
 }
 
 function resetToDefaults() {
-    // Clear all override flags
+    // Clear all override flags (including max units in the toolbar)
     Object.keys(PLANNING_CONFIG.overrides).forEach(key => {
         PLANNING_CONFIG.overrides[key] = false;
     });
 
-    // Clear input fields
-    document.getElementById('maxUnits').value = '';
+    // Recalculate automatic values and show them as placeholders
+    updateDynamicSettings();
+    loadCurrentSettings();
     document.getElementById('minUnits').value = '';
     document.getElementById('targetUnits').value = '';
 
-    // Recalculate dynamic settings
-    updateDynamicSettings();
-
-    showSuccessMessage('Reset to dynamic settings!');
+    showSuccessMessage('Units reset to automatic.');
 }
 
 function showSuccessMessage(message) {
@@ -3598,6 +3606,11 @@ function loadSavedSettings() {
         } catch (e) {
             console.warn('Failed to load saved planning configuration');
         }
+    }
+
+    const savedEngine = localStorage.getItem('plannerEngine');
+    if (savedEngine === 'optimal' || savedEngine === 'heuristic') {
+        plannerEngine = savedEngine;
     }
 
     const savedPlanningSpeed = localStorage.getItem('planningSpeed');
@@ -3666,16 +3679,16 @@ function updateAcademicSystemUI() {
     
     if (currentAcademicSystem === 'semester') {
         // Update label for semester system
-        if (graduationLabel) graduationLabel.textContent = 'Semesters to Graduate:';
+        if (graduationLabel) graduationLabel.textContent = 'Graduate in';
         
         // Update dropdown options for semesters
         if (graduationSelect) {
             graduationSelect.innerHTML = `
-                <option value="4">2 Years (4 semesters)</option>
-                <option value="6">3 Years (6 semesters)</option>
-                <option value="8" selected>4 Years (8 semesters)</option>
-                <option value="10">5 Years (10 semesters)</option>
-                <option value="custom">Custom</option>
+                <option value="4">2 years (4 semesters)</option>
+                <option value="6">3 years (6 semesters)</option>
+                <option value="8" selected>4 years (8 semesters)</option>
+                <option value="10">5 years (10 semesters)</option>
+                <option value="custom">Custom…</option>
             `;
         }
         
@@ -3683,16 +3696,16 @@ function updateAcademicSystemUI() {
         if (customInput) customInput.placeholder = 'Enter semesters';
     } else {
         // Update label for quarter system
-        if (graduationLabel) graduationLabel.textContent = 'Quarters to Graduate:';
+        if (graduationLabel) graduationLabel.textContent = 'Graduate in';
         
         // Update dropdown options for quarters
         if (graduationSelect) {
             graduationSelect.innerHTML = `
-                <option value="8">2 Years (8 quarters)</option>
-                <option value="12">3 Years (12 quarters)</option>
-                <option value="16" selected>4 Years (16 quarters)</option>
-                <option value="20">5 Years (20 quarters)</option>
-                <option value="custom">Custom</option>
+                <option value="8">2 years (8 quarters)</option>
+                <option value="12">3 years (12 quarters)</option>
+                <option value="16" selected>4 years (16 quarters)</option>
+                <option value="20">5 years (20 quarters)</option>
+                <option value="custom">Custom…</option>
             `;
         }
         
@@ -3805,6 +3818,7 @@ function updateDynamicSettings() {
 
     // Save settings
     saveDynamicSettings();
+    syncMaxUnitsQuick();
 }
 
 function updateAcademicSystem() {
@@ -3888,7 +3902,6 @@ function saveDynamicSettings() {
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
-    loadRawDataColumnPrefs();
     initAccountAuth();
 
     const dataUrlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
@@ -3901,6 +3914,8 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeQuarters();
         renderPlanner();
     }
+    showDataEmptyState(false);
+    syncMaxUnitsQuick();
 });
 
 function openPlannerTemplate() {
@@ -3909,141 +3924,65 @@ function openPlannerTemplate() {
     window.open(templateUrl, '_blank', 'noopener,noreferrer');
 }
 
-function updateFileNameDisplay(fileName) {
-    const fileNameDisplay = document.getElementById('fileNameDisplay');
-    if (fileNameDisplay) {
-        if (fileName) {
-            fileNameDisplay.textContent = fileName;
-            fileNameDisplay.classList.add('uploaded');
-            fileNameDisplay.style.display = 'inline-block';
-        } else {
-            fileNameDisplay.textContent = '';
-            fileNameDisplay.classList.remove('uploaded');
-            fileNameDisplay.style.display = 'none';
-        }
-    }
-}
-
+// Picking a file loads it right away.
 function handleQuickFileSelect(event) {
     const fileInput = event.target;
-    const errorMessage = document.getElementById('errorMessage');
-    const uploadButton = fileInput.closest('.upload-icon-button');
-
-    if (fileInput.files.length > 0) {
-        const file = fileInput.files[0];
-
-        // Check file extension
-        const fileNameStr = file.name.toLowerCase();
-        if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
-            showError("Please select a CSV or TSV file (.csv, .tsv, or .txt extension)");
-            fileInput.value = ''; // Clear the input
-            // Remove uploaded state
-            if (uploadButton) uploadButton.classList.remove('file-uploaded');
-            updateFileNameDisplay(null);
-            return;
-        }
-
-        // Add visual feedback for file upload
-        if (uploadButton) uploadButton.classList.add('file-uploaded');
-
-        // Update file name display
-        updateFileNameDisplay(file.name);
-
-        // Clear any existing error messages
-        errorMessage.style.display = 'none';
-
-        // Don't load the file immediately - wait for Load Data button click
-    } else {
-        // Remove uploaded state if no file selected
-        if (uploadButton) uploadButton.classList.remove('file-uploaded');
-        updateFileNameDisplay(null);
+    if (fileInput.files.length === 0) return;
+    const file = fileInput.files[0];
+    const fileNameStr = file.name.toLowerCase();
+    if (!fileNameStr.endsWith('.csv') && !fileNameStr.endsWith('.tsv') && !fileNameStr.endsWith('.txt')) {
+        showError("Please choose a CSV or TSV file (.csv, .tsv, or .txt).");
+        fileInput.value = '';
+        return;
     }
+    loadCourseDataFromQuickFile(file).finally(() => { fileInput.value = ''; });
 }
 
 async function loadCourseDataFromQuickFile(file) {
     try {
         document.body.classList.add('loading');
-        
-        // Clear all pinned courses and do a hard reset
-        pinnedCourses.clear();
-        lockedQuarters.clear();
+        document.getElementById('errorMessage').style.display = 'none';
         graph = {};
-
-        // Read file content
         const tsvData = await readFileAsText(file);
         await processTSVData(tsvData);
-        
+        setDataSource(file.name);
     } catch (error) {
         console.error("Error in loadCourseDataFromQuickFile:", error);
-        showError("Error loading file: " + error.message);
+        showError("Couldn't load that file. " + error.message);
         document.body.classList.remove('loading');
     }
 }
 
-// Step Navigation Functions
-function goToStep(stepNumber) {
-    // Update step indicators
-    document.querySelectorAll('.step').forEach(step => {
-        const currentStep = parseInt(step.dataset.step);
-        step.classList.remove('active');
-        if (currentStep < stepNumber) {
-            step.classList.add('completed');
-        } else if (currentStep === stepNumber) {
-            step.classList.add('active');
-        } else {
-            step.classList.remove('completed');
-        }
-    });
-
-    // Show active step content
-    document.querySelectorAll('.step-content').forEach(content => {
-        content.classList.remove('active');
-        if (parseInt(content.dataset.step) === stepNumber) {
-            content.classList.add('active');
-        }
-    });
+// Where the current course list came from, shown in the data bar.
+function setDataSource(label) {
+    try { localStorage.setItem('dataSourceLabel', label); } catch (e) { /* storage unavailable */ }
+    showDataEmptyState(false);
 }
 
-// Add click handlers for steps and automatic progression
-document.addEventListener('DOMContentLoaded', () => {
-    // Allow clicking on steps
-    document.querySelectorAll('.step').forEach(step => {
-        step.addEventListener('click', () => {
-            const stepNumber = parseInt(step.dataset.step);
-            // Only allow going back to previous steps or current step
-            if (stepNumber <= getCurrentStep()) {
-                goToStep(stepNumber);
-            }
-        });
-    });
+function getDataSourceLabel() {
+    try { return localStorage.getItem('dataSourceLabel') || 'Course list'; } catch (e) { return 'Course list'; }
+}
 
-    // Auto-advance after template access
-    const templateButton = document.querySelector('.template-tooltip-button');
-    if (templateButton) {
-        templateButton.addEventListener('click', () => {
-            setTimeout(() => goToStep(2), 500);
-        });
-    }
+// The empty state shows when there's no course list, or when the user
+// clicks Replace; otherwise a one-line data bar takes its place.
+function showDataEmptyState(show) {
+    const hasData = ALL_CLASSES_DATA.length > 0;
+    const showEmpty = show || !hasData;
+    const empty = document.getElementById('dataEmptyState');
+    const bar = document.getElementById('dataLoadedBar');
+    const cancel = document.getElementById('cancelReplaceButton');
+    if (!empty || !bar) return;
+    empty.hidden = !showEmpty;
+    bar.hidden = showEmpty;
+    if (cancel) cancel.hidden = !(showEmpty && hasData);
+    updateDataBar();
+}
 
-    // Auto-advance after data load
-    const loadDataButton = document.querySelector('.load-data-button');
-    if (loadDataButton) {
-        const originalOnClick = loadDataButton.onclick;
-        loadDataButton.onclick = async function(e) {
-            if (originalOnClick) {
-                await originalOnClick.call(this, e);
-            }
-            // Only advance if data was loaded successfully (no error message shown)
-            const errorMessage = document.getElementById('errorMessage');
-            if (errorMessage && errorMessage.style.display !== 'block') {
-                setTimeout(() => goToStep(3), 500);
-            }
-        };
-    }
-});
-
-// Helper function to get current active step
-function getCurrentStep() {
-    const activeStep = document.querySelector('.step.active');
-    return activeStep ? parseInt(activeStep.dataset.step) : 1;
+function updateDataBar() {
+    const label = document.getElementById('dataSourceLabel');
+    const count = document.getElementById('dataCourseCount');
+    if (!label || !count) return;
+    const active = ALL_CLASSES_DATA.filter(c => c.enabled !== false).length;
+    label.textContent = getDataSourceLabel();
+    count.textContent = `${active} course${active === 1 ? '' : 's'}`;
 }

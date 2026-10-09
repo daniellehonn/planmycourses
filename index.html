@@ -5,116 +5,69 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Class Planner</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='5' width='26' height='24' rx='3' fill='%232F3E56'/%3E%3Crect x='3' y='5' width='26' height='7' rx='3' fill='%231F2A3B'/%3E%3Crect x='8' y='16' width='6' height='4' rx='1' fill='%23FAF9F5'/%3E%3Crect x='18' y='16' width='6' height='4' rx='1' fill='%23FAF9F5'/%3E%3Crect x='8' y='22' width='6' height='4' rx='1' fill='%23FAF9F5'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
-</head>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-92G8WGBVFP"></script>
-<script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-92G8WGBVFP"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
 
-    gtag('config', 'G-92G8WGBVFP');
-</script>
+        gtag('config', 'G-92G8WGBVFP');
+    </script>
+</head>
 
 <body>
 
-    <!-- Sidebar for instructions -->
-    <div class="sidebar" id="instructionsSidebar">
+    <!-- Help panel -->
+    <div class="sidebar" id="instructionsSidebar" role="dialog" aria-labelledby="helpTitle" inert>
         <div class="sidebar-header">
-            <h1>📋 Setup Instructions</h3>
-                <button class="sidebar-close" onclick="toggleSidebar()">×</button>
+            <h2 id="helpTitle">How to use the planner</h2>
+            <button class="sidebar-close" onclick="toggleSidebar()" aria-label="Close help">×</button>
         </div>
         <div class="sidebar-content">
             <div class="instructions-step">
-                <h2>Step 1: Access the Template</h4>
-                    <ol>
-                        <li>
-                            <button onclick="openPlannerTemplate()" class="template-button-small">
-                                <span class="button-icon">📋</span>
-                                Open Course Planner Template
-                            </button>
-                        </li>
-                        <li>Click <strong>File</strong> → <strong>Make a copy</strong> to create your own editable
-                            version</li>
-                        <img src="./img/makeacopy.png" alt="Screenshot showing how to make a copy of the template"
-                            style="max-width: 40%; margin: 10px 0; border: 1px solid #ccc;">
-                    </ol>
+                <h3>1. Make your course list</h3>
+                <p>Open the template, then <strong>File → Make a copy</strong>. One row per course; put your most
+                    important courses near the top.</p>
+                <button onclick="openPlannerTemplate()" class="secondary-button">Open the template</button>
+                <img src="./img/makeacopy.png" alt="The File menu in Google Sheets with Make a copy highlighted"
+                    class="help-image">
             </div>
 
             <div class="instructions-step">
-                <h2>Step 2: Customize Your Course List</h4>
-                    <p>Replace the sample data with your own courses</p>
-                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨
-                            PLEASE NOTE:</strong> If you have fulfilled a course elsewhere (eg. CC, AP, IB, etc.),
-                        please don't include it in your course list or list it as a prerequisite/corequisite!</p>
-                    <h3><strong>For each course, fill in:</strong></h3>
-                    <ol>
-                        <li><strong>Course Name & Number</strong> (e.g., "CS 101"):</li>
-                        <li><strong>Taken:</strong>
-                            <ul>
-                                <li>Write <code>Not Assigned</code> if you haven't taken it yet</li>
-                                <li>Otherwise, use format like: <code>"Fall, Year 1"</code></li>
-                            </ul>
-                        </li>
-                        <li><strong>Req Satisfied:</strong>
-                            <ul>
-                                <li>The requirement category this course satisfies</li>
-                                <li>Examples: <code>Lower Div</code>, <code>Major Core</code>, <code>5 Elective</code>,
-                                    <code>GE</code>, <code>TB</code>
-                                </li>
-                            </ul>
-                        </li>
-                        <li><strong>Prerequisites (courses that must be taken before this one):</strong>
-                            <ul>
-                                <li>List course numbers separated by commas</li>
-                                <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the
-                                    spreadsheet</li>
-                            </ul>
-                        </li>
-                        <li><strong>Corequisites (courses that must be taken together):</strong>
-                            <ul>
-                                <li>List course numbers separated by commas</li>
-                                <li><strong>⚠️</strong>: These must exactly match the course names elsewhere in the
-                                    spreadsheet</li>
-                            </ul>
-                        </li>
-                        <li><strong>Units</strong>: How many units the course is worth</li>
-                    </ol>
-                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;"><strong>✨ Pro
-                            Tip:</strong> Put your most important courses at the top — the planner uses this order to
-                        prioritize!</p>
-            </div>
-
-
-            <div class="instructions-step">
-                <h2>Step 3: Export Your Data</h4>
-                    <ol>
-                        <li>In your Google Sheet, go to <strong>File</strong> → <strong>Share</strong> → <strong>Publish
-                                to web</strong></li>
-                        <img src="./img/publishtoweb.png" alt="Screenshot showing how to publish your Google Sheet"
-                            style="max-width: 60%; margin: 10px 0; border: 1px solid #ccc;">
-                        <li>In the dropdown menu, change from <strong>"Entire Document"</strong> to your specific
-                            sheet/tab</li>
-                        <li>In the dropdown menu, change from <strong>"Web page"</strong> to <strong>"Comma-separated
-                                values (.csv)"</strong></li>
-                        <li>Click <strong>Publish</strong> and copy the generated link</li>
-                        <img src="./img/publishedlink.png" alt="Screenshot showing how to copy the link"
-                            style="max-width: 50%; margin: 10px 0; border: 1px solid #ccc;">
-                    </ol>
+                <h3>2. Fill in the columns</h3>
+                <dl class="help-columns">
+                    <dt>Course Number</dt><dd>e.g. <code>CS 31</code>. Other columns refer to courses by this name, spelled exactly the same.</dd>
+                    <dt>Taken</dt><dd><code>Not Assigned</code>, or a term like <code>Fall, Year 1</code> to fix the course there.</dd>
+                    <dt>Req Satisfied</dt><dd>The requirement it counts toward, e.g. <code>Major Core</code>, <code>GE</code>. Separate several with commas.</dd>
+                    <dt>Prerequisites</dt><dd>Courses needed first, separated by commas. Use <code>/</code> for either-or: <code>CS 31 / CS 31E</code>.</dd>
+                    <dt>Corequisites</dt><dd>Courses taken earlier or in the same term.</dd>
+                    <dt>Units, Difficulty</dt><dd>Units per course; difficulty (optional) is used to balance workload.</dd>
+                </dl>
+                <p class="help-note">Leave out courses you've already satisfied elsewhere (AP, IB, transfer credit),
+                    and don't list them as prerequisites.</p>
             </div>
 
             <div class="instructions-step">
-                <h2>Step 4: Connect to Course Planner</h4>
-                    <ol>
-                        <li>Paste the copied link into the <strong>Load Course Data</strong> field</li>
-                    </ol>
-                    <p class="planning-note" style="border-left: 4px solid #3b82f6; padding-left: 12px;">
-                        <strong>Important</strong>: Verify the link ends with <code>output=csv</code> before submitting
-                    </p>
+                <h3>3. Load it</h3>
+                <p>Download the sheet as CSV (<strong>File → Download → Comma-separated values</strong>) and upload
+                    it, or publish it (<strong>File → Share → Publish to web</strong>, choose your tab and
+                    <strong>Comma-separated values</strong>) and paste the link.</p>
+                <img src="./img/publishtoweb.png" alt="The Publish to web dialog in Google Sheets" class="help-image">
             </div>
-            <h2><em>🎉 Congrats! Your course planner is now ready to go!</em></h2>
 
+            <div class="instructions-step">
+                <h3>4. Plan</h3>
+                <ul>
+                    <li><strong>Auto Plan</strong> fills your terms. Change the timeline or max units first if you need to.</li>
+                    <li>Drag a course to move it, or click it to see details and move it from there.</li>
+                    <li><strong>Pin</strong> a course to keep it where it is; <strong>lock</strong> a term to keep the whole term.</li>
+                    <li>Courses turn red when a prerequisite isn't scheduled before them.</li>
+                </ul>
+                <p><a href="https://www.youtube.com/watch?v=qUQWsvibaeo" target="_blank" rel="noopener noreferrer">Watch the video walkthrough</a></p>
+            </div>
         </div>
     </div>
 
@@ -125,168 +78,109 @@
         <div class="header-section">
             <h1>Interactive Class Planner</h1>
             <div class="header-buttons">
+                <button class="help-button" onclick="toggleSidebar()">Help</button>
                 <button id="accountButton" class="account-button" onclick="openAccountModal()" title="Account">
                     <span id="accountButtonLabel">Sign In</span>
                 </button>
-                <button class="help-button" onclick="toggleSidebar()" title="Show setup instructions">
-                    📋 Setup Guide
-                </button>
             </div>
         </div>
 
-        <!-- Input and Video Container -->
-        <div class="input-video-container">
-            <!-- Consolidated Input Module -->
-            <div class="input-module">
-                <div class="input-header">
-                    <div class="header-left">
-                        <h2 class="input-title">Setup:</h2>
-                    </div>
-                    <!-- Step Progress Bar -->
-                    <div class="step-progress">
-                        <div class="step active" data-step="1">
-                            <div class="step-number">1</div>
-                            <div class="step-title">Configure Course List</div>
-                        </div>
-                        <div class="step" data-step="2">
-                            <div class="step-number">2</div>
-                            <div class="step-title">Upload List</div>
-                        </div>
-                        <div class="step" data-step="3">
-                            <div class="step-number">3</div>
-                            <div class="step-title">Customize</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Step 1: Configure Course List -->
-                <div class="step-content active" data-step="1">
-                    <div class="template-tooltip">
-                        <span class="template-tooltip-text">Input your required course list into the provided template:
-                        </span>
-                        <button onclick="openPlannerTemplate()" class="template-tooltip-button"
-                            style="padding: 12px 24px; font-size: 16px;">
-                            📋 Access Planner Template
-                        </button>
-                    </div>
-                    <div class="step-navigation">
-                        <button onclick="goToStep(2)" class="next-button" title="Next Step">→</button>
-                    </div>
-                </div>
-
-                <!-- Step 2: Upload List -->
-                <div class="step-content" data-step="2">
-                    <div class="input-url-section">
-                        <div class="upload-icon-button" title="Upload CSV file">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                                stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="7,10 12,15 17,10"></polyline>
-                                <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                            <input type="file" id="quickFileInput" accept=".csv,.txt"
-                                onchange="handleQuickFileSelect(event)"
-                                style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;">
-                        </div>
-                        <span id="fileNameDisplay" class="file-name-display" style="display: none;"></span>
-                        <input type="text" id="dataUrlNew" placeholder="Paste Google Sheet CSV URL or upload file"
-                            value="">
-                        <button onclick="loadCourseData()" class="load-data-button">
-                            <span class="button-icon">🚀</span>
-                            Load Data
-                        </button>
-                    </div>
-                    <div class="step-navigation">
-                        <button onclick="goToStep(1)" class="back-button" title="Previous Step">←</button>
-                        <button onclick="goToStep(3)" class="next-button" title="Next Step">→</button>
-                    </div>
-                </div>
-
-                <!-- Step 3: Customize -->
-                <div class="step-content" data-step="3">
-                    <div class="input-settings-bottom">
-                        <div class="setting-group">
-                            <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Semesters to
-                                Graduate:</label>
-                            <select id="quartersToGraduateNew" onchange="updateDynamicSettings()">
-                                <option value="4">2 Years (4 Semesters)</option>
-                                <option value="6">3 Years (6 Semesters)</option>
-                                <option value="8" selected>4 Years (8 Semesters)</option>
-                                <option value="10">5 Years (10 Semesters)</option>
-                                <option value="custom">Custom</option>
-                            </select>
-                            <input type="number" id="customQuartersNew" min="4" max="32" value="16"
-                                style="display: none;" onchange="updateDynamicSettings()" placeholder="Enter semesters">
-                        </div>
-
-                        <div class="setting-group">
-                            <label for="academicSystemNew">Academic System:</label>
-                            <select id="academicSystemNew" onchange="updateAcademicSystem()">
-                                <option value="quarter">Quarter System</option>
-                                <option value="semester" selected>Semester System</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="step-navigation">
-                        <button onclick="goToStep(2)" class="back-button" title="Previous Step">←</button>
-                    </div>
-                </div>
-
-                <!-- Error Message Container -->
-                <div id="errorMessage" class="error-message"></div>
+        <!-- Course list: empty state until data is loaded, then a compact bar -->
+        <section id="dataEmptyState" class="data-empty-state" aria-labelledby="dataEmptyTitle">
+            <div class="data-empty-text">
+                <h2 id="dataEmptyTitle">Start with your course list</h2>
+                <p>Upload a CSV of your courses, or paste a link to a published Google Sheet.
+                    New here? <button type="button" class="link-button" onclick="openPlannerTemplate()">Copy the template</button>
+                    or <button type="button" class="link-button" onclick="toggleSidebar()">read the guide</button>.</p>
             </div>
-
-            <!-- YouTube Video -->
-            <div class="video-section">
-                <div class="video-container">
-                    <iframe src="https://www.youtube.com/embed/qUQWsvibaeo" title="Class Planner Tutorial Video"
-                        frameborder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen>
-                    </iframe>
-                </div>
+            <div class="data-empty-actions">
+                <input type="file" id="quickFileInput" class="visually-hidden" accept=".csv,.tsv,.txt"
+                    onchange="handleQuickFileSelect(event)">
+                <label class="primary-button file-button" for="quickFileInput">Upload CSV</label>
+                <span class="data-or">or</span>
+                <form class="data-url-form" onsubmit="event.preventDefault(); loadCourseData();">
+                    <label for="dataUrlNew" class="visually-hidden">Published Google Sheet link</label>
+                    <input type="url" id="dataUrlNew" placeholder="Paste a published sheet link (…output=csv)">
+                    <button type="submit" class="secondary-button">Load</button>
+                </form>
+                <button type="button" id="cancelReplaceButton" class="link-button" onclick="showDataEmptyState(false)" hidden>Cancel</button>
             </div>
+            <div id="errorMessage" class="error-message"></div>
+        </section>
+
+        <div id="dataLoadedBar" class="data-loaded-bar" hidden>
+            <span class="data-source"><span class="data-source-label" id="dataSourceLabel"></span>
+                <span class="data-course-count" id="dataCourseCount"></span></span>
+            <span class="data-bar-actions">
+                <button type="button" class="link-button" onclick="showDataEmptyState(true)">Replace</button>
+            </span>
         </div>
 
         <div class="view-switcher">
-            <button id="viewTabPlanner" class="view-tab active" onclick="switchToView('planner')">Planner</button>
-            <button id="viewTabRaw" class="view-tab" onclick="switchToView('raw')">Raw Data</button>
+            <button id="viewTabPlanner" class="view-tab active" onclick="switchToView('planner')">Plan</button>
+            <button id="viewTabRaw" class="view-tab" onclick="switchToView('raw')">Edit courses</button>
         </div>
 
         <div id="plannerView">
-            <div class="unassigned-classes-container">
-                <h2>Unassigned Classes</h2>
-                <div id="unassignedClasses" class="unassigned-classes drop-zone">
-                    <!-- Class cards will be populated here -->
+            <!-- Settings that change the plan -->
+            <div class="plan-toolbar">
+                <div class="toolbar-field">
+                    <label for="academicSystemNew">Terms</label>
+                    <select id="academicSystemNew" onchange="updateAcademicSystem()">
+                        <option value="quarter">Quarters</option>
+                        <option value="semester" selected>Semesters</option>
+                    </select>
+                </div>
+                <div class="toolbar-field">
+                    <label for="quartersToGraduateNew" id="graduationTimelineLabelNew">Graduate in</label>
+                    <span class="toolbar-inline">
+                        <select id="quartersToGraduateNew" onchange="updateDynamicSettings()">
+                            <option value="4">2 years (4 semesters)</option>
+                            <option value="6">3 years (6 semesters)</option>
+                            <option value="8" selected>4 years (8 semesters)</option>
+                            <option value="10">5 years (10 semesters)</option>
+                            <option value="custom">Custom…</option>
+                        </select>
+                        <input type="number" id="customQuartersNew" min="4" max="32" value="16" style="display: none;"
+                            onchange="updateDynamicSettings()" aria-label="Number of terms" placeholder="Terms">
+                    </span>
+                </div>
+                <div class="toolbar-field">
+                    <label for="maxUnitsQuick">Max units / term</label>
+                    <input type="number" id="maxUnitsQuick" min="1" max="40" placeholder="Auto"
+                        onchange="handleMaxUnitsQuickChange(this.value)">
+                </div>
+                <div class="toolbar-actions">
+                    <button id="autoPlanButton" class="primary-button" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
+                    <button id="settingsButton" class="secondary-button" onclick="openSettingsModal()">More settings</button>
+                    <button id="downloadButton" class="secondary-button" onclick="downloadPlan()">Export</button>
                 </div>
             </div>
 
-            <!-- Requirement Progress Dashboard -->
-            <div class="requirements-dashboard">
-                <h2>📊 Requirement Progress</h2>
+            <div id="planStatus" class="plan-status" role="status" hidden></div>
+
+            <details id="requirementsPanel" class="requirements-dashboard">
+                <summary><span class="requirements-title">Requirements</span>
+                    <span id="requirementsSummary" class="requirements-summary"></span></summary>
                 <div id="requirement-dashboard" class="requirement-progress-container">
                     <!-- Progress bars will be populated here -->
+                </div>
+            </details>
+
+            <div class="unassigned-classes-container">
+                <h2>Unassigned <span id="unassignedCount" class="section-count"></span></h2>
+                <div id="unassignedClasses" class="unassigned-classes drop-zone">
+                    <!-- Class cards will be populated here -->
                 </div>
             </div>
 
             <div class="years-container">
                 <div class="years-header">
                     <div class="years-header-title">
-                        <h2>Academic Plan</h2>
+                        <h2>Your plan</h2>
                         <span id="unitsInPlanCounter" class="units-in-plan"></span>
                         <span id="planRunInfo" class="plan-run-info" hidden></span>
                     </div>
-                    <div class="action-buttons">
-                        <button id="autoPlanButton" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
-                        <button id="settingsButton" onclick="openSettingsModal()">⚙️ Advanced Settings</button>
-                        <button id="downloadButton" onclick="downloadPlan()">📥 Export Plan</button>
-                    </div>
-                </div>
-                <div class="plan-features">
-                    <p><strong>💡 Quick Tips:</strong>
-                        Drag & drop classes • Auto-plan on demand • Pin classes (📌) to specific quarters • Lock quarters
-                        (🔒) to preserve completed terms • Export your plan (📥)
-                    </p>
                 </div>
                 <div id="years">
                     <!-- Years and Quarters will be populated here -->
@@ -294,30 +188,17 @@
             </div>
         </div>
 
-        <div id="rawDataView" style="display: none;">
+    <div id="rawDataView" style="display: none;">
             <div class="raw-data-container">
                 <div class="raw-data-header">
                     <div>
-                        <h2>Raw Course Data</h2>
-                        <p class="raw-data-description">Edit the imported spreadsheet directly. Changes here are a
-                            snapshot — nothing affects your plan until you apply them.</p>
+                        <h2>Edit courses</h2>
+                        <p class="raw-data-description">Edit your course list here. Untick Show to leave a course out
+                            of planning. Changes apply when you click Apply; your current plan is kept.</p>
                     </div>
                     <div class="action-buttons">
-                        <div class="column-picker">
-                            <button type="button" id="columnPickerButton" class="secondary-button" onclick="toggleColumnPicker()">Columns</button>
-                            <div id="columnPickerMenu" class="column-picker-menu" style="display: none;">
-                                <label><input type="checkbox" data-col-toggle="taken" checked onchange="handleColumnToggle('taken', this.checked)"> Taken</label>
-                                <label><input type="checkbox" data-col-toggle="reqSatisfied" checked onchange="handleColumnToggle('reqSatisfied', this.checked)"> Req Satisfied</label>
-                                <label><input type="checkbox" data-col-toggle="id" checked onchange="handleColumnToggle('id', this.checked)"> Course Number</label>
-                                <label><input type="checkbox" data-col-toggle="prerequisites" checked onchange="handleColumnToggle('prerequisites', this.checked)"> Prerequisites</label>
-                                <label><input type="checkbox" data-col-toggle="corequisites" checked onchange="handleColumnToggle('corequisites', this.checked)"> Corequisites</label>
-                                <label><input type="checkbox" data-col-toggle="description" checked onchange="handleColumnToggle('description', this.checked)"> Description</label>
-                                <label><input type="checkbox" data-col-toggle="units" checked onchange="handleColumnToggle('units', this.checked)"> Units</label>
-                                <label><input type="checkbox" data-col-toggle="difficulty" checked onchange="handleColumnToggle('difficulty', this.checked)"> Difficulty</label>
-                            </div>
-                        </div>
                         <button id="addRawRowButton" class="secondary-button" onclick="addRawDataRow()">+ Add Row</button>
-                        <button id="applyRawDataButton" class="primary-button" onclick="applyRawDataToPlanner()">Apply to Planner</button>
+                        <button id="applyRawDataButton" class="primary-button" onclick="applyRawDataToPlanner()">Apply</button>
                     </div>
                 </div>
                 <div id="rawDataError" class="error-message"></div>
@@ -401,46 +282,16 @@
 
     <!-- Settings Modal -->
     <div class="settings-modal-overlay" id="settingsModalOverlay" onclick="closeSettingsModal()">
-        <div class="settings-modal" onclick="event.stopPropagation()">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" onclick="event.stopPropagation()">
             <div class="settings-header">
-                <h3>⚙️ Advanced Planning Settings</h3>
-                <button class="modal-close" onclick="closeSettingsModal()">×</button>
+                <h3 id="settingsTitle">More settings</h3>
+                <button class="modal-close" onclick="closeSettingsModal()" aria-label="Close settings">×</button>
             </div>
             <div class="settings-content">
-                <div class="settings-section">
-                    <h4>Unit Planning Configuration</h4>
-                    <p class="settings-description">Override the dynamic calculations with custom values. Leave blank to
-                        use dynamic settings.</p>
-
-                    <div class="settings-grid">
-                        <div class="setting-item">
-                            <label for="maxUnits">Max Units per Term</label>
-                            <input type="number" id="maxUnits" min="1" max="30" placeholder="Auto">
-                        </div>
-                        <div class="setting-item">
-                            <label for="minUnits">Min Units per Term</label>
-                            <input type="number" id="minUnits" min="1" max="30" placeholder="Auto">
-                        </div>
-                        <div class="setting-item">
-                            <label for="targetUnits">Target Units per Term</label>
-                            <input type="number" id="targetUnits" min="1" max="30" placeholder="Auto">
-                        </div>
-                    </div>
-
-                    <div class="current-dynamic-values">
-                        <h5>Current Dynamic Values:</h5>
-                        <div class="dynamic-values-grid">
-                            <span>Min Units: <strong id="currentMinUnits">12</strong></span>
-                            <span>Max Units: <strong id="currentMaxUnits">16</strong></span>
-                            <span>Target Units: <strong id="currentTargetUnits">14</strong></span>
-                        </div>
-                    </div>
-                </div>
+                <div id="settingsError" class="error-message"></div>
 
                 <div class="settings-section">
-                    <h4>Planning Speed</h4>
-                    <p class="settings-description">Fastest packs more units per quarter to graduate sooner;
-                        Balanced (default) spreads workload more evenly across quarters.</p>
+                    <h4>Workload</h4>
                     <div class="planning-speed-toggle">
                         <label class="speed-option">
                             <input type="radio" name="planningSpeed" id="planningSpeedBalanced" value="balanced" checked onchange="updatePlanningSpeedToggleUI()">
@@ -451,34 +302,90 @@
                             <span>Fastest</span>
                         </label>
                     </div>
+                    <p class="settings-description">Balanced aims for an even load each term. Fastest fills terms up
+                        to the max (plus 4 units) to finish sooner.</p>
+                    <div class="settings-grid">
+                        <div class="setting-item">
+                            <label for="minUnits">Min units per term</label>
+                            <input type="number" id="minUnits" min="1" max="30" placeholder="Auto">
+                        </div>
+                        <div class="setting-item">
+                            <label for="targetUnits">Target units per term</label>
+                            <input type="number" id="targetUnits" min="1" max="30" placeholder="Auto">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="settings-section">
-                    <h4>Category Priority</h4>
-                    <p class="settings-description">Drag to reorder. Categories higher in the list are scheduled
-                        first when the planner chooses between available courses. Ties are broken by dependency
-                        depth, then by number of dependents.</p>
+                    <h4>Planner</h4>
+                    <div class="planning-speed-toggle">
+                        <label class="speed-option">
+                            <input type="radio" name="plannerEngine" id="plannerEngineOptimal" value="optimal" checked onchange="updatePlanningSpeedToggleUI()">
+                            <span>Optimal</span>
+                        </label>
+                        <label class="speed-option">
+                            <input type="radio" name="plannerEngine" id="plannerEngineHeuristic" value="heuristic" onchange="updatePlanningSpeedToggleUI()">
+                            <span>Quick</span>
+                        </label>
+                    </div>
+                    <p class="settings-description">Optimal solves the whole plan at once and usually fits more
+                        courses (about a second). Quick fills one term at a time and is instant. If Optimal can't
+                        load, Quick is used automatically.</p>
+                </div>
+
+                <div class="settings-section">
+                    <h4>Category priority</h4>
+                    <p class="settings-description">Drag to reorder. When courses compete for the same term, those in
+                        higher categories go first. Required courses are always placed before optional ones.</p>
                     <ul id="categoryPriorityList" class="category-priority-list">
                         <li class="category-priority-empty">Load course data to see categories.</li>
                     </ul>
                 </div>
 
                 <div class="settings-section">
-                    <h4>Graduation Requirements</h4>
-                    <p class="settings-description">How many courses and/or units each category actually needs to
-                        graduate. Leave both blank to use however many courses you've listed. Use Units for a
-                        requirement that's unit-based rather than course-based (e.g. 12 units of upper-division
-                        electives, however many courses that takes) — the dashboard tracks units instead of course
-                        count once set. Auto-plan stops scheduling a category once every target you've set for it is
-                        met.</p>
+                    <h4>Graduation requirements</h4>
+                    <p class="settings-description">How many courses or units each category needs. Leave blank to plan
+                        every course you've listed. Auto Plan stops adding courses to a category once it's met.</p>
                     <ul id="requirementTargetsList" class="requirement-targets-list">
                         <li class="category-priority-empty">Load course data to see categories.</li>
                     </ul>
                 </div>
 
                 <div class="settings-actions">
-                    <button class="secondary-button" onclick="resetToDefaults()">Reset to Dynamic</button>
-                    <button class="primary-button" onclick="saveSettings()">Save Settings</button>
+                    <button class="secondary-button" onclick="resetToDefaults()">Reset units to auto</button>
+                    <button class="primary-button" onclick="saveSettings()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Course details (click a course card) -->
+    <div class="settings-modal-overlay" id="courseDetailsOverlay" onclick="closeCourseDetails()">
+        <div class="settings-modal course-details" role="dialog" aria-modal="true" aria-labelledby="courseDetailsTitle" onclick="event.stopPropagation()">
+            <div class="settings-header">
+                <div>
+                    <h3 id="courseDetailsTitle"></h3>
+                    <p id="courseDetailsMeta" class="course-details-meta"></p>
+                </div>
+                <button class="modal-close" onclick="closeCourseDetails()" aria-label="Close course details">×</button>
+            </div>
+            <div class="settings-content">
+                <p id="courseDetailsDescription" class="course-details-description"></p>
+                <div id="courseDetailsNote" class="course-details-note" hidden></div>
+                <dl class="course-details-facts">
+                    <dt>Prerequisites</dt><dd id="courseDetailsPrereqs"></dd>
+                    <dt>Corequisites</dt><dd id="courseDetailsCoreqs"></dd>
+                    <dt>Unlocks</dt><dd id="courseDetailsUnlocks"></dd>
+                </dl>
+                <div class="course-details-move">
+                    <label for="courseDetailsMoveSelect">Move to</label>
+                    <select id="courseDetailsMoveSelect"></select>
+                    <button type="button" class="primary-button" onclick="moveCourseFromDetails()">Move</button>
+                </div>
+                <div id="courseDetailsMoveMessage" class="course-details-move-message" hidden></div>
+                <div class="settings-actions">
+                    <button type="button" class="secondary-button" id="courseDetailsEditButton">Edit course</button>
+                    <button type="button" class="secondary-button" id="courseDetailsPinButton"></button>
                 </div>
             </div>
         </div>

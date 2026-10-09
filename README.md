@@ -20,9 +20,9 @@ This is a **deterministic, rule-based planning engine** — there is currently n
 
 1. [Copy the course list template](https://docs.google.com/spreadsheets/d/1IkugQtWd_GgqWf7J7NXUQ3XwH0jD0YoG5QRHAMxUFn4/edit?usp=sharing) (File → Make a copy)
 2. Replace the sample rows with your own courses, ordered by priority
-3. Publish the sheet to the web as **TSV** (File → Share → Publish to web → Tab-separated values), and confirm the link ends in `output=tsv`
-4. Paste the link into the planner (or upload a CSV directly) and click auto-plan
-5. Drag courses between quarters to adjust; pin/lock anything that shouldn't move
+3. Download it as CSV and click **Upload CSV**, or publish it to the web (File → Share → Publish to web → Comma-separated values) and paste the link
+4. Pick quarters or semesters, how long you have to graduate, and (optionally) max units per term, then click **Auto Plan Courses**
+5. Drag courses to adjust, or click a course to see its details and move it from there (this also works on phones). Pin courses or lock terms that shouldn't move
 6. Export the finished plan
 
 ### Course data format
@@ -43,7 +43,12 @@ A course becomes eligible once every prerequisite entry is met (any one course i
 
 ## How the scheduler decides what to take next
 
-The planner is a **priority-based topological scheduler**, not a simple sort by course number or difficulty:
+There are two planners (switch in **More settings → Planner**):
+
+- **Optimal** (default) — `solver.js` turns the plan into a mixed-integer program and solves it with [HiGHS](https://highs.dev/) (WebAssembly, loaded from jsDelivr) in a Web Worker (`solver-worker.js`). One yes/no variable per (course, term); constraints for prerequisites (any course of a `/` group, in an earlier term), corequisites (earlier or same term), the unit cap per term, and graduation targets. The objective places as many courses as possible (required ones first), as early as possible (bottleneck and required courses most), while keeping each term near the target load. On the sample CSV it finds a proven-optimal plan in about 0.3–2 s. If HiGHS can't load or run, the app falls back to the quick planner automatically.
+- **Quick** — the original greedy planner below, which fills one term at a time.
+
+The quick planner is a **priority-based topological scheduler**, not a simple sort by course number or difficulty:
 
 1. Model courses as nodes in a directed graph; prerequisites are edges (prereq → dependent).
 2. Each quarter, find courses the student is eligible for (not completed, prereqs satisfied, coreqs satisfiable, offered that term if known).
@@ -106,6 +111,7 @@ Planned backend services: Course Catalog Service, Degree Requirement Service, Pl
 ## Files
 
 - `index.html` / `styles.css` / `script.js` — the app
+- `solver.js` / `solver-worker.js` — the optimal planner (integer-program model + HiGHS Web Worker)
 - `supabase-config.js` / `supabase-schema.sql` — optional account sync (project URL + public key, and the `user_data` table with row-level security)
 - `course_scheduler_algorithm_spec.md` — detailed algorithm spec (priority scoring, workload balancing, edge cases)
 - `instructions.md` — end-user setup instructions for the Google Sheets template
