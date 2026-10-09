@@ -232,3 +232,27 @@ test('the quick planner places a course whenever a term has room for it', async 
     planner.runHeuristic();
     assert.deepEqual(planner.snapshot().unassigned, []);
 });
+
+// From a user's share link: "Stats & DS Minor" target 0 blocked every course
+// that also counted toward ST or Probability, so ST stayed at 0/3, Year 4
+// stayed empty, and "7 courses didn't fit".
+for (const engine of ['heuristic', 'optimal']) {
+    test(`${engine}: a met target doesn't block courses another requirement needs`, async () => {
+        const planner = await createPlanner({ terms: 16 }).load(SAMPLE);
+        planner.setTargets({
+            'Grad Level': { count: 0 }, '5 Elective': { count: 5 }, 'Stats & DS Minor': { count: 0 },
+            'Probability': { count: 1 }, 'Capstone': { count: 1 }, 'TB': { count: 3 }, 'ST': { count: 3 },
+            'GE': { count: 5 }, 'Major Core': { count: 7 }, 'Lower Div': { count: 15 }
+        });
+        const before = planner.snapshot();
+        if (engine === 'optimal') await planner.runOptimal({ timeLimitSeconds: 10 }); else planner.runHeuristic();
+        const after = planner.snapshot();
+        assert.deepEqual(checkPlan(before, after), []);
+        const met = planner.value(`Object.fromEntries(Object.entries(requirementTargets).map(([k, t]) => [k,
+            ALL_CLASSES_DATA.filter(c => getCourseCategories(c).includes(k) &&
+                quartersData.some(q => q.id !== 'unassigned' && q.classes.includes(c.id))).length >= t.count]))`);
+        assert.deepEqual(Object.entries(met).filter(([, ok]) => !ok).map(([k]) => k), []);
+        assert.ok(after.unassigned.every(id => after.courses.find(c => c.id === id).reason.startsWith('Not needed')),
+            'everything left out is only left out because its requirement is met');
+    });
+}

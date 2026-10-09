@@ -70,20 +70,32 @@ function checkPlan(before, after) {
         });
     });
 
-    // 7. Graduation targets aren't exceeded by what the planner added
-    Object.entries(after.targets || {}).forEach(([category, target]) => {
-        const inCategory = ids => ids.filter(id => courses[id] && courses[id].categories.includes(category));
-        const already = inCategory(Object.keys(placedBefore));
-        const added = inCategory(plannerPlaced);
-        if (target.count != null && added.length > Math.max(0, target.count - already.length)) {
-            violations.push(`${category}: ${already.length + added.length} courses planned, target ${target.count}`);
-        }
-        if (target.units != null) {
-            const units = ids => ids.reduce((s, id) => s + courses[id].units, 0);
-            if (units(added) > Math.max(0, target.units - units(already))) {
-                violations.push(`${category}: ${units(already) + units(added)} units planned, target ${target.units}`);
-            }
-        }
+    // 7. Graduation targets: every course the planner added is still needed.
+    //    It has a category without a target, or a category still at or below
+    //    its target, or a placed course that needs it as a prerequisite.
+    //    (A course may push a met category over target when it also counts
+    //    toward an unmet one, e.g. "ST, Stats & DS Minor".)
+    const targets = after.targets || {};
+    const hasTarget = k => targets[k] && (targets[k].count != null || targets[k].units != null);
+    const counts = {};
+    const unitTotals = {};
+    Object.keys(placedAfter).forEach(id => (courses[id] ? courses[id].categories : []).forEach(k => {
+        counts[k] = (counts[k] || 0) + 1;
+        unitTotals[k] = (unitTotals[k] || 0) + courses[id].units;
+    }));
+    plannerPlaced.forEach(id => {
+        const course = courses[id];
+        if (!course.categories.every(hasTarget)) return;
+        const isPrereq = Object.keys(placedAfter).some(other =>
+            courses[other] && courses[other].prerequisites.some(entry => alternatives(entry).includes(id)));
+        if (isPrereq) return;
+        const withinSome = course.categories.some(k => {
+            const t = targets[k];
+            const countOk = t.count == null || counts[k] - 1 < t.count;
+            const unitsOk = t.units == null || unitTotals[k] - course.units < t.units;
+            return countOk && unitsOk;
+        });
+        if (!withinSome) violations.push(`${id} planned although ${course.categories.join(', ')} already met`);
     });
 
     return violations;

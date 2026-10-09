@@ -2665,7 +2665,7 @@ function buildSolverProblem(run) {
     // Room left under each graduation-requirement target after fixed courses
     const targets = {};
     Object.entries(requirementTargets).forEach(([category, target]) => {
-        if (!target) return;
+        if (!target || (target.count == null && target.units == null)) return;
         targets[category] = {
             count: target.count != null ? target.count - (run.categoryPlacedCounts[category] || 0) : null,
             units: target.units != null ? target.units - (run.categoryPlacedUnits[category] || 0) : null
@@ -2815,9 +2815,11 @@ function preparePlanningRun() {
         }
     });
 
+    const neededPrereqs = computeNeededPrerequisites(graph, categoryPlacedCounts, categoryPlacedUnits);
+
     return {
         academicQuarters, addFixedCoursesBefore, completed,
-        categoryPlacedCounts, categoryPlacedUnits, scores, feasibility
+        categoryPlacedCounts, categoryPlacedUnits, scores, feasibility, neededPrereqs
     };
 }
 
@@ -2834,7 +2836,7 @@ function planHeuristic() {
     const run = preparePlanningRun();
     if (!run) return null;
     const { academicQuarters, addFixedCoursesBefore, completed,
-        categoryPlacedCounts, categoryPlacedUnits, scores } = run;
+        categoryPlacedCounts, categoryPlacedUnits, scores, neededPrereqs } = run;
 
     // A pinned/fixed course's prerequisites (transitively) must land strictly
     // before it. deadlineOrder[id] = earliest chronological order of any
@@ -2883,7 +2885,8 @@ function planHeuristic() {
             .filter(node => !node.placed && !completed.has(node.course.id))
             .filter(node => checkPrerequisitesSatisfied(node, completed, graph))
             .filter(node => getQuarterChronologicalOrder(quarter) < (deadlineOrder[node.course.id] ?? Infinity))
-            .filter(node => courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits))
+            .filter(node => neededPrereqs.has(node.course.id) ||
+                courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits))
             .sort((a, b) => scores.get(b.course.id) - scores.get(a.course.id));
 
         if (eligible.length === 0) {
@@ -2895,7 +2898,7 @@ function planHeuristic() {
         const combos = generateUnitFeasibleCombinations(eligible, remainingBudget);
         const validCombos = combos
             .filter(combo => combinationCoreqsSatisfied(combo, completed, quarter))
-            .filter(combo => comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits));
+            .filter(combo => comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits, neededPrereqs));
 
         let bestCombo = [];
         let bestScore = -Infinity;
@@ -2929,14 +2932,17 @@ function planHeuristic() {
     return run;
 }
 
-// Shared wrap-up: explain every course left unassigned, then re-render.
+// Shared wrap-up: drop courses beyond the graduation targets, explain every
+// course left unassigned, then re-render.
 function finishPlanningRun(run) {
+    pruneCoursesBeyondTargets(run);
     const { academicQuarters, categoryPlacedCounts, categoryPlacedUnits } = run;
 
     // Courses left over solely because their category already hit its
     // configured target get a specific reason, ahead of the generic pass.
     Object.values(graph).forEach(node => {
-        if (!node.placed && !courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits)) {
+        if (!node.placed && !(run.neededPrereqs && run.neededPrereqs.has(node.course.id)) &&
+            !courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits)) {
             const metCategories = getCourseCategories(node.course)
                 .filter(cat => requirementTargets[cat] != null)
                 .map(cat => {
@@ -2973,30 +2979,102 @@ function combinationCoreqsSatisfied(combo, completed, quarter) {
     );
 }
 
-// The per-quarter eligible list already excludes courses whose categories
-// are fully met going into the quarter, but several same-category courses
-// can still be simultaneously eligible and land in the same combo — this
-// catches that case so a target can't be overshot within a single quarter.
-function comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits) {
-    const projectedCount = {};
-    const projectedUnits = {};
+// Graduation targets limit which courses are worth planning: a course is
+// worth adding only while at least one of its categories still needs more
+// (or it's a prerequisite of a course that does). Courses are checked in
+// combination order with counts updated as they're added, so several
+// courses for the same requirement can't overshoot it within one term. A
+// course that counts toward a met category AND an unmet one is allowed:
+// e.g. "ST, Stats & DS Minor" when ST still needs courses but the minor's
+// target is 0.
+function comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlacedUnits, neededPrereqs) {
+    const counts = { ...categoryPlacedCounts };
+    const units = { ...categoryPlacedUnits };
     for (const node of combo) {
-        for (const category of getCourseCategories(node.course)) {
-            const target = requirementTargets[category];
-            if (!target) continue;
-            projectedCount[category] = (projectedCount[category] || 0) + 1;
-            projectedUnits[category] = (projectedUnits[category] || 0) + (node.course.units || 0);
-            if (target.count != null &&
-                (categoryPlacedCounts[category] || 0) + projectedCount[category] > target.count) {
-                return false;
-            }
-            if (target.units != null &&
-                (categoryPlacedUnits[category] || 0) + projectedUnits[category] > target.units) {
-                return false;
-            }
-        }
+        const needed = (neededPrereqs && neededPrereqs.has(node.course.id)) ||
+            courseHelpsUnmetCategory(node.course, counts, units);
+        if (!needed) return false;
+        incrementCategoryCounts(node.course, counts, units);
     }
     return true;
+}
+
+// Courses placed as prerequisites also count toward their own categories,
+// so a plan can end up over a target (e.g. 7 electives when 5 are needed).
+// Remove planned courses, latest first, while every one of their categories
+// stays at or above target and no placed course depends on them. Pinned,
+// locked, and summer courses are never removed.
+function pruneCoursesBeyondTargets(run) {
+    const hasTarget = k => requirementTargets[k] &&
+        (requirementTargets[k].count != null || requirementTargets[k].units != null);
+    if (!Object.keys(requirementTargets).some(hasTarget)) return;
+
+    const recount = () => {
+        const counts = {};
+        const units = {};
+        Object.values(graph).forEach(node => {
+            if (node.placed) incrementCategoryCounts(node.course, counts, units);
+        });
+        return { counts, units };
+    };
+    let { counts, units } = recount();
+
+    const removable = (node, quarter) => {
+        const categories = getCourseCategories(node.course);
+        if (!categories.every(hasTarget)) return false;
+        if (quarter.pinnedClasses && quarter.pinnedClasses.includes(node.course.id)) return false;
+        const needed = Object.values(graph).some(other =>
+            other.placed && allPrereqIds(other.course).includes(node.course.id));
+        if (needed) return false;
+        return categories.every(k => {
+            const t = requirementTargets[k];
+            const countOk = t.count == null || (counts[k] || 0) - 1 >= t.count;
+            const unitsOk = t.units == null || (units[k] || 0) - (node.course.units || 0) >= t.units;
+            return countOk && unitsOk;
+        });
+    };
+
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const candidates = run.academicQuarters
+            .slice()
+            .sort((a, b) => getQuarterChronologicalOrder(b) - getQuarterChronologicalOrder(a))
+            .flatMap(q => q.classes.map(id => [graph[id], q]))
+            .filter(([node]) => node && node.placed);
+        for (const [node, quarter] of candidates) {
+            if (!removable(node, quarter)) continue;
+            quarter.classes = quarter.classes.filter(id => id !== node.course.id);
+            quarter.units -= node.course.units || 0;
+            getQuarterById('unassigned').classes.push(node.course.id);
+            node.placed = false;
+            ({ counts, units } = recount());
+            changed = true;
+            break;
+        }
+    }
+    run.categoryPlacedCounts = counts;
+    run.categoryPlacedUnits = units;
+}
+
+// Courses that must be planned because a still-needed course depends on
+// them (transitively), even if their own categories' targets are met.
+function computeNeededPrerequisites(graph, categoryPlacedCounts, categoryPlacedUnits) {
+    const needed = new Set();
+    const stack = Object.values(graph)
+        .filter(node => !node.placed && courseHelpsUnmetCategory(node.course, categoryPlacedCounts, categoryPlacedUnits))
+        .map(node => node.course.id);
+    while (stack.length > 0) {
+        const node = graph[stack.pop()];
+        if (!node) continue;
+        node.prerequisites.flatMap(prereqAlternatives).forEach(id => {
+            if (graph[id] && !graph[id].placed && !needed.has(id)) {
+                needed.add(id);
+                stack.push(id);
+            }
+        });
+    }
+    return needed;
 }
 
 // ----- Share links -----

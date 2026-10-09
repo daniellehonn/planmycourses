@@ -140,19 +140,53 @@ function buildPlanModel(problem) {
         addRow([...diffRow, [-1, dover]], '<=', config.maxDifficulty - term.fixedDifficulty);
     });
 
-    // Graduation-requirement targets: don't schedule past what's still needed
-    Object.entries(targets).forEach(([category, target]) => {
-        const members = courses.map((c, i) => [c, i]).filter(([c]) => (c.categories || []).includes(category));
-        if (members.length === 0) return;
+    // Graduation-requirement targets: a course whose categories ALL have
+    // targets is only worth placing if it fills a still-open slot in one of
+    // them (y_i_k = 1: course i counts toward category k), or if a placed
+    // course needs it as a prerequisite. Courses with any untargeted
+    // category are unrestricted. A course in a met category and an unmet one
+    // (e.g. "ST, Stats & DS Minor" with the minor's target at 0) can still
+    // take an ST slot.
+    const targeted = new Set(Object.keys(targets));
+    const slotVars = [];
+    const slotsByCategory = {};
+    const pinnedNeeds = new Set(fixedCourses.flatMap(fc => (fc.prerequisites || []).flat()));
+    courses.forEach((course, i) => {
+        const cats = course.categories || [];
+        if (cats.length === 0 || !cats.every(k => targeted.has(k))) return;
+        if (pinnedNeeds.has(course.id)) return; // a pinned course needs it
+        const placed = terms.map((t, j) => [1, x(i, j)]);
+        const slots = cats.map(k => {
+            const v = `y_${i}_${slotVars.length}`;
+            slotVars.push(v);
+            (slotsByCategory[k] = slotsByCategory[k] || []).push([course, v]);
+            return [1, v];
+        });
+        // only count toward a category if actually placed
+        addRow([...slots, ...placed.map(([c, v]) => [-c, v])], '<=', 0);
+        // placed only if it fills a slot or a placed course depends on it
+        const dependents = [];
+        courses.forEach((other, d) => {
+            if ((other.prerequisites || []).some(entry => entry.includes(course.id))) {
+                terms.forEach((t, j) => dependents.push([-1, x(d, j)]));
+            }
+        });
+        addRow([...placed, ...slots.map(([c, v]) => [-c, v]), ...dependents], '<=', 0);
+    });
+    Object.entries(slotsByCategory).forEach(([category, members]) => {
+        const target = targets[category];
         if (target.count != null) {
-            addRow(members.flatMap(([c, i]) => terms.map((t, j) => [1, x(i, j)])), '<=', Math.max(0, target.count));
+            addRow(members.map(([c, v]) => [1, v]), '<=', Math.max(0, target.count));
         }
         if (target.units != null) {
-            addRow(members.flatMap(([c, i]) => terms.map((t, j) => [c.units || 0, x(i, j)])), '<=', Math.max(0, target.units));
+            // The last course may overshoot a units target (8 units needed,
+            // 5-unit courses), so allow up to one course's worth extra
+            const largest = Math.max(...members.map(([c]) => c.units || 0));
+            addRow(members.map(([c, v]) => [c.units || 0, v]), '<=', Math.max(0, target.units) + Math.max(0, largest - 1));
         }
     });
 
-    const binaries = courses.flatMap((c, i) => terms.map((t, j) => x(i, j)));
+    const binaries = [...courses.flatMap((c, i) => terms.map((t, j) => x(i, j))), ...slotVars];
     const lp = [
         'Maximize',
         ' obj: ' + formatLinear(objective),
