@@ -31,7 +31,7 @@ Each row needs:
 
 | Column | Meaning |
 |---|---|
-| `Taken` | A fixed placement, e.g. `Fall, Year 1`, or `Not Assigned`. The course is pinned to that term; Auto Plan never moves it but may add other courses to the same term. |
+| `Taken` | The term you took the course, e.g. `Fall, Year 1`, or `Not Assigned`. The course is pinned there and **the term is locked**, so Auto Plan treats it as done and adds nothing to it. Unlock the term to plan into it. |
 | `Req Satisfied` | Requirement category (`Lower Div`, `Major Core`, `5 Elective`, `GE`, etc.). Separate several with commas — `ST, Stats & DS Minor` counts toward both `ST` and `Stats & DS Minor`. |
 | `Course Number` | Course ID, e.g. `CS 35L` |
 | `Prerequisites` | Comma-separated list, or `None`. Every entry is required; use `/` for alternatives (`CS 31 / CS 31E, MATH 31A` = one of CS 31 or CS 31E, and MATH 31A). Names must match another row's Course Number exactly. |

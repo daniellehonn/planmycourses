@@ -3224,61 +3224,40 @@ function formatQuarterForTaken(quarterName) {
     return quarterName; // Fallback to original name
 }
 
+// Courses with a Taken term are placed and pinned there, and their term is
+// locked: Auto Plan treats it as done and adds nothing to it. (Unlocking a
+// term later keeps the Taken courses pinned.)
 function processTakenCourses() {
-    console.log('Processing taken courses...');
-    console.log('ALL_CLASSES_DATA:', ALL_CLASSES_DATA);
-    
     ALL_CLASSES_DATA.forEach(courseData => {
-        if (courseData.enabled === false) return;
+        if (courseData.enabled === false || !courseData.taken) return;
         // Already placed (e.g. kept from the previous plan): leave it there
         if (quartersData.some(q => q.id !== 'unassigned' && q.classes.includes(courseData.id))) return;
-        console.log(`Course ${courseData.id}: taken = "${courseData.taken}"`);
 
-        if (courseData.taken && courseData.taken !== '') {
-            const quarterId = parseQuarterFromTaken(courseData.taken);
-            console.log(`Parsed quarter ID for ${courseData.id}: ${quarterId}`);
-            
-            if (quarterId) {
-                // Add to target quarter and pin it. If the quarter doesn't
-                // exist (e.g. "Fall, Year 5" in a 3-year plan), the course
-                // stays in Unassigned rather than vanishing.
-                const targetQuarter = getQuarterById(quarterId);
-                console.log(`Target quarter for ${courseData.id}:`, targetQuarter);
-                
-                if (targetQuarter) {
-                    const unassignedQuarter = getQuarterById('unassigned');
-                    if (unassignedQuarter) {
-                        unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== courseData.id);
-                    }
+        const quarterId = parseQuarterFromTaken(courseData.taken);
+        // A term outside the timeline (e.g. "Fall, Year 5" in a 3-year plan)
+        // leaves the course in Unassigned rather than making it vanish.
+        const targetQuarter = quarterId && getQuarterById(quarterId);
+        if (!targetQuarter) return;
 
-                    targetQuarter.classes.push(courseData.id);
-                    targetQuarter.pinnedClasses.push(courseData.id);
-                    pinnedCourses.add(courseData.id);
-
-                    // Update quarter stats
-                    targetQuarter.units += courseData.units;
-
-                    console.log(`Successfully placed ${courseData.id} in ${quarterId}`);
-                } else {
-                    console.log(`Could not find quarter ${quarterId} for course ${courseData.id}`);
-                }
-            } else {
-                console.log(`Could not parse quarter from "${courseData.taken}" for course ${courseData.id}`);
-            }
+        const unassignedQuarter = getQuarterById('unassigned');
+        if (unassignedQuarter) {
+            unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== courseData.id);
         }
+        targetQuarter.classes.push(courseData.id);
+        targetQuarter.pinnedClasses.push(courseData.id);
+        targetQuarter.units += courseData.units;
+        pinnedCourses.add(courseData.id);
+        lockedQuarters.add(targetQuarter.id);
     });
 }
 
 function parseQuarterFromTaken(takenValue) {
-    console.log(`Parsing taken value: "${takenValue}"`);
-    
     // Parse format like "Fall, Year 1" or "Winter, Year 2"
     const match = takenValue.match(/^(Fall|Winter|Spring|Summer),?\s*Year\s*(\d+)$/i);
     if (match) {
         const season = match[1].toLowerCase();
         const year = parseInt(match[2]);
         const result = `${season}${year}`;
-        console.log(`Matched format 1: ${result}`);
         return result;
     }
     
@@ -3288,11 +3267,8 @@ function parseQuarterFromTaken(takenValue) {
         const season = match2[1].toLowerCase();
         const year = parseInt(match2[2]);
         const result = `${season}${year}`;
-        console.log(`Matched format 2: ${result}`);
         return result;
     }
-    
-    console.log(`No match found for: "${takenValue}"`);
     return null; // Invalid format
 }
 
