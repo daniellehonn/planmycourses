@@ -67,14 +67,17 @@ function buildPlanModel(problem) {
         // Each course at most once
         addRow(terms.map((t, j) => [1, x(i, j)]), '<=', 1);
 
-        // Prerequisite entries: AND across entries, OR within an entry
+        // Prerequisite entries: AND across entries, OR within an entry.
+        // Cumulative ("by term j") form: taking course i by term j requires
+        // some alternative strictly before term j. This is the tight
+        // precedence formulation; the per-term form solves far slower.
         (course.prerequisites || []).forEach(entry => {
             const alternatives = entry.filter(relevant);
             if (alternatives.length === 0) return;
             terms.forEach((term, j) => {
                 const fixedBefore = alternatives.some(a => fixed[a] != null && fixed[a] < term.order);
                 if (fixedBefore) return;
-                const row = [[1, x(i, j)]];
+                const row = termsUpTo(term.order).map(jj => [1, x(i, jj)]);
                 alternatives.forEach(a => {
                     if (!courseIndex.has(a)) return;
                     const ai = courseIndex.get(a);
@@ -84,12 +87,12 @@ function buildPlanModel(problem) {
             });
         });
 
-        // Corequisites: earlier or the same term
+        // Corequisites: earlier or the same term (same cumulative form)
         (course.corequisites || []).forEach(coreq => {
             if (!relevant(coreq)) return;
             terms.forEach((term, j) => {
                 if (fixed[coreq] != null && fixed[coreq] <= term.order) return;
-                const row = [[1, x(i, j)]];
+                const row = termsUpTo(term.order).map(jj => [1, x(i, jj)]);
                 if (courseIndex.has(coreq)) {
                     const qi = courseIndex.get(coreq);
                     termsUpTo(term.order).forEach(jj => row.push([-1, x(qi, jj)]));

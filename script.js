@@ -2551,27 +2551,33 @@ async function autoPlanOptimal() {
 
     if (problem.courses.length > 0) {
         const result = await solveInWorker(problem);
-        problem.courses.forEach(course => {
-            const quarterId = result.placements[course.id];
-            if (!quarterId) return;
-            const quarter = getQuarterById(quarterId);
-            const node = graph[course.id];
-            quarter.classes.push(course.id);
-            quarter.units += node.course.units;
-            node.placed = true;
-            node.unassignedReason = '';
-            incrementCategoryCounts(node.course, run.categoryPlacedCounts, run.categoryPlacedUnits);
-        });
+        applySolverPlacements(run, problem, result.placements);
         lastPlanRun = { engine: 'optimal', ms: result.ms, status: result.status, stats: result.stats };
     } else {
         lastPlanRun = { engine: 'optimal', ms: 0, status: 'Nothing to place' };
     }
 
+    finishPlanningRun(run);
+    renderPlanRunInfo();
+}
+
+// Put the solver's { courseId: quarterId } answer into the plan. Shared with
+// the test suite, which runs the solver in Node instead of a Web Worker.
+function applySolverPlacements(run, problem, placements) {
+    problem.courses.forEach(course => {
+        const quarterId = placements[course.id];
+        if (!quarterId) return;
+        const quarter = getQuarterById(quarterId);
+        const node = graph[course.id];
+        quarter.classes.push(course.id);
+        quarter.units += node.course.units;
+        node.placed = true;
+        node.unassignedReason = '';
+        incrementCategoryCounts(node.course, run.categoryPlacedCounts, run.categoryPlacedUnits);
+    });
     // The solver plans whole-term combinations, so there are no per-quarter
     // runner-up lists like the heuristic produces.
     run.academicQuarters.forEach(q => { q.backupOptions = []; });
-    finishPlanningRun(run);
-    renderPlanRunInfo();
 }
 
 // Turn the prepared planning state into the plain problem solver.js expects.

@@ -108,10 +108,21 @@ User Approval           (built, via drag-and-drop review)
 
 Planned backend services: Course Catalog Service, Degree Requirement Service, Planning Engine, Validation Engine, Recommendation Service, AI Intent Parser, Plan Explanation Service, User Feedback Service — backed by Postgres (courses, prerequisites, requirements, course_offerings, user_courses, user_preferences, degree_plans, plan_versions, feedback).
 
+## Testing
+
+```
+npm install        # one dev dependency: highs (the solver, for Node)
+npm test           # rules + regression + solver unit tests (node --test)
+npm run compare    # side-by-side table: quick vs optimal planner on every fixture
+```
+
+The suite loads the real `script.js` into a Node VM with a minimal fake DOM, so it tests the code the browser runs. `tests/fixtures.js` holds the inputs: the sample CSV under several settings, seeded synthetic catalogs (`tests/helpers/catalogs.js`: deeper chains, OR-groups, corequisite pairs, graduation targets, an over-capacity stress case), and hand-written edge cases. For every fixture, both planners must satisfy every rule in `tests/helpers/invariants.js` (each course once; prerequisites earlier; corequisites earlier or same term; unit cap; locked terms, pins, and graduation targets respected), and the optimal planner must leave out no more required courses than the quick one. `tests/regressions.test.js` has one test per bug fixed in the October 2026 review. CI runs the suite on every push and posts the comparison table to the run summary.
+
 ## Files
 
 - `index.html` / `styles.css` / `script.js` — the app
 - `solver.js` / `solver-worker.js` — the optimal planner (integer-program model + HiGHS Web Worker)
+- `tests/` — test suite and planner comparison (`npm test`, `npm run compare`)
 - `supabase-config.js` / `supabase-schema.sql` — optional account sync (project URL + public key, and the `user_data` table with row-level security)
 - `course_scheduler_algorithm_spec.md` — detailed algorithm spec (priority scoring, workload balancing, edge cases)
 - `instructions.md` — end-user setup instructions for the Google Sheets template
