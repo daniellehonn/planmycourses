@@ -256,3 +256,12 @@ for (const engine of ['heuristic', 'optimal']) {
             'everything left out is only left out because its requirement is met');
     });
 }
+
+test('unused template rows (no course number) are skipped, not rejected', async () => {
+    // The Google Sheets template pre-fills Taken and Difficulty on blank rows
+    const csv = 'Taken,Course Number,Prerequisites,Corequisites,Description,Units,Difficulty\n' +
+        'Not Assigned,CS 1,None,None,Intro,1,1\n' +
+        'Not Assigned,,,,,,1\n'.repeat(18);
+    const planner = await createPlanner().load(csv);
+    assert.deepEqual(planner.snapshot().courses.map(c => c.id), ['CS 1']);
+});

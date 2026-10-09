@@ -144,7 +144,9 @@ function readFileAsText(file) {
 }
 
 async function processTSVData(tsvData) {
-    const parsedData = parseTSV(tsvData);
+    // Rows without a course number are unused template rows (the template
+    // pre-fills Taken/Difficulty on blank rows), not courses
+    const parsedData = parseTSV(tsvData).filter(row => !('Course Number' in row) || row['Course Number'].trim() !== '');
     
     if (parsedData.length === 0) {
         throw new Error('No data found in TSV file');
@@ -4051,7 +4053,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function openPlannerTemplate() {
     // Open the planner template in a new tab
-    const templateUrl = 'https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing'; // Replace with actual template URL
+    const templateUrl = 'https://docs.google.com/spreadsheets/d/11h6T1080j6RTk9EUBoycZvgq-gj-Add7Y0oL3-ztW70/edit?usp=sharing';
     window.open(templateUrl, '_blank', 'noopener,noreferrer');
 }
 
