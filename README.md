@@ -23,7 +23,7 @@ This is a **deterministic, rule-based planning engine** — there is currently n
 3. Download it as CSV and click **Upload CSV**, or publish it to the web (File → Share → Publish to web → Comma-separated values) and paste the link
 4. Pick quarters or semesters, how long you have to graduate, and (optionally) max units per term, then click **Auto Plan Courses**
 5. Drag courses to adjust, or click a course to see its details and move it from there (this also works on phones). Pin courses or lock terms that shouldn't move
-6. Export the finished plan
+6. Export the finished plan. The file re-imports as-is: courses you took stay in `Taken` (locked), and the rest of the plan goes in a `Planned` column.
 
 ### Course data format
 
@@ -32,6 +32,7 @@ Each row needs:
 | Column | Meaning |
 |---|---|
 | `Taken` | The term you took the course, e.g. `Fall, Year 1`, or `Not Assigned`. The course is pinned there and **the term is locked**, so Auto Plan treats it as done and adds nothing to it. Unlock the term to plan into it. |
+| `Planned` | Optional; written by Export. The term the course was planned in. On import it goes back there, unpinned and unlocked, so Auto Plan can still move it. |
 | `Req Satisfied` | Requirement category (`Lower Div`, `Major Core`, `5 Elective`, `GE`, etc.). Separate several with commas — `ST, Stats & DS Minor` counts toward both `ST` and `Stats & DS Minor`. |
 | `Course Number` | Course ID, e.g. `CS 35L` |
 | `Prerequisites` | Comma-separated list, or `None`. Every entry is required; use `/` for alternatives (`CS 31 / CS 31E, MATH 31A` = one of CS 31 or CS 31E, and MATH 31A). Names must match another row's Course Number exactly. |

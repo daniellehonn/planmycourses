@@ -148,7 +148,7 @@ async function processTSVData(tsvData) {
 
     // Validate required columns
     const requiredColumns = ['Course Number', 'Prerequisites', 'Description'];
-    const optionalColumns = ['Taken', 'Corequisites', 'Req Satisfied', 'Units', 'Difficulty'];
+    const optionalColumns = ['Taken', 'Planned', 'Corequisites', 'Req Satisfied', 'Units', 'Difficulty'];
 
     const firstRow = parsedData[0];
     const availableColumns = Object.keys(firstRow);
@@ -179,6 +179,8 @@ async function processTSVData(tsvData) {
         reqSatisfied: row['Req Satisfied'] ? row['Req Satisfied'].trim() : 'Required', // New column for requirement category
         category: "Required", // Default all courses to Required
         taken: row['Taken'] ? row['Taken'].trim() : '',
+        // Written by Export: where the course sat in the saved plan
+        planned: row['Planned'] ? row['Planned'].trim() : '',
         enabled: true, // Toggled off from the Raw Data view to exclude a course from planning
         originalOrder: index
     }));
@@ -200,6 +202,7 @@ async function processTSVData(tsvData) {
     
     // Process courses with "Taken" assignments
     processTakenCourses();
+    processPlannedCourses();
     
     // Recalculate dynamic settings based on the new course data
     updateDynamicSettings();
@@ -3215,18 +3218,23 @@ function downloadPlan() {
         return;
     }
 
-    // Create CSV content with new format
-    let csvContent = "Taken,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Units,Difficulty\n";
+    // Taken holds only courses you took (they lock their term on import);
+    // everything else in the plan goes to Planned, which re-imports without
+    // locking anything.
+    let csvContent = "Taken,Planned,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Units,Difficulty\n";
 
-    // Process all courses in their original order
     ALL_CLASSES_DATA.forEach(courseData => {
-        // Find which quarter this course is in
-        let takenValue = 'Not Assigned';
         const courseQuarter = quartersData.find(q => q.classes.includes(courseData.id));
+        const placed = courseQuarter && courseQuarter.id !== 'unassigned';
+        const wasTaken = !!(courseData.taken && parseQuarterFromTaken(courseData.taken));
 
-        if (courseQuarter && courseQuarter.id !== 'unassigned') {
-            // Convert quarter ID back to "Season, Year X" format
-            takenValue = formatQuarterForTaken(courseQuarter.name);
+        let takenValue = 'Not Assigned';
+        let plannedValue = '';
+        if (wasTaken) {
+            // Keep the course's current term in case it was moved since
+            takenValue = placed ? formatQuarterForTaken(courseQuarter.name) : courseData.taken;
+        } else if (placed) {
+            plannedValue = formatQuarterForTaken(courseQuarter.name);
         }
 
         // Format prerequisites
@@ -3241,7 +3249,7 @@ function downloadPlan() {
         // line breaks survive a re-import. Course Number is the id (not the
         // display name) because other rows' prerequisites reference the id.
         const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
-        csvContent += [takenValue, reqSatisfied, courseData.id, prerequisites, corequisites,
+        csvContent += [takenValue, plannedValue, reqSatisfied, courseData.id, prerequisites, corequisites,
             courseData.description || '', courseData.units, getCourseDifficulty(courseData)].map(csvField).join(',') + '\n';
     });
     
@@ -3295,6 +3303,25 @@ function processTakenCourses() {
         targetQuarter.units += courseData.units;
         pinnedCourses.add(courseData.id);
         lockedQuarters.add(targetQuarter.id);
+    });
+}
+
+// Put courses back where an exported plan had them (the Planned column).
+// Unlike Taken, these aren't pinned or locked, so Auto Plan can still move
+// them. Planned values pointing at a locked or missing term are ignored.
+function processPlannedCourses() {
+    const unassignedQuarter = getQuarterById('unassigned');
+    ALL_CLASSES_DATA.forEach(courseData => {
+        if (courseData.enabled === false || !courseData.planned) return;
+        if (quartersData.some(q => q.id !== 'unassigned' && q.classes.includes(courseData.id))) return;
+        const quarterId = parseQuarterFromTaken(courseData.planned);
+        const quarter = quarterId && getQuarterById(quarterId);
+        if (!quarter || isQuarterLocked(quarter.id)) return;
+        if (unassignedQuarter) {
+            unassignedQuarter.classes = unassignedQuarter.classes.filter(id => id !== courseData.id);
+        }
+        quarter.classes.push(courseData.id);
+        quarter.units += courseData.units;
     });
 }
 

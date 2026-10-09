@@ -169,3 +169,22 @@ test('course text is escaped before it reaches HTML', async () => {
     assert.equal(planner.run(`escapeHtml('<img src=x onerror=alert(1)>')`),
         '&lt;img src=x onerror=alert(1)&gt;');
 });
+
+test('export then import restores the plan and locks only Taken terms', async () => {
+    const original = await createPlanner({ terms: 12 }).load(SAMPLE);
+    original.runHeuristic();
+    original.run('downloadPlan()');
+    const planned = original.snapshot();
+
+    const reloaded = await createPlanner({ terms: 12 }).load(original.exported.csv);
+    const restored = reloaded.snapshot();
+
+    planned.terms.forEach(t => {
+        const now = restored.terms.find(x => x.id === t.id);
+        assert.deepEqual([...now.classes].sort(), [...t.classes].sort(), t.id);
+    });
+    assert.deepEqual(restored.terms.filter(t => t.locked).map(t => t.id),
+        planned.terms.filter(t => t.locked).map(t => t.id));
+    // Planned courses aren't pinned, so Auto Plan is still free to move them
+    assert.equal(reloaded.run('pinnedCourses.size'), original.run('pinnedCourses.size'));
+});
