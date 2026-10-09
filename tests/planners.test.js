@@ -51,3 +51,23 @@ for (const fixture of FIXTURES) {
         });
     });
 }
+
+// On a slow device the solver can stop at its time limit with a weak plan;
+// the app then keeps the quick planner's plan if that's better.
+test('a solver cut short never does worse than the quick planner', async () => {
+    const fixture = FIXTURES.find(f => f.stress);
+    const heuristic = await plan(fixture, 'heuristic');
+
+    const planner = createPlanner(fixture.options);
+    await planner.load(fixture.csv);
+    const before = planner.snapshot();
+    await planner.runOptimal({ timeLimitSeconds: 0.5 });
+    const after = planner.snapshot();
+    const o = planMetrics(after);
+    const h = heuristic.metrics;
+
+    assert.deepEqual(checkPlan(before, after), []);
+    assert.ok(o.requiredUnplaced < h.requiredUnplaced ||
+        (o.requiredUnplaced === h.requiredUnplaced && o.unplaced <= h.unplaced),
+        `optimal (cut short) left out ${o.requiredUnplaced} required / ${o.unplaced} total; heuristic ${h.requiredUnplaced} / ${h.unplaced}`);
+});

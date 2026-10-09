@@ -2549,16 +2549,48 @@ async function autoPlanOptimal() {
     if (!run) return;
     const problem = buildSolverProblem(run);
 
+    let chosenRun = run;
     if (problem.courses.length > 0) {
         const result = await solveInWorker(problem);
-        applySolverPlacements(run, problem, result.placements);
-        lastPlanRun = { engine: 'optimal', ms: result.ms, status: result.status, stats: result.stats };
+        const settled = settleOptimalRun(run, problem, result.placements, result.status);
+        chosenRun = settled.run;
+        lastPlanRun = { engine: 'optimal', ms: result.ms, status: result.status, stats: result.stats,
+            keptHeuristic: settled.keptHeuristic };
     } else {
         lastPlanRun = { engine: 'optimal', ms: 0, status: 'Nothing to place' };
     }
 
-    finishPlanningRun(run);
+    finishPlanningRun(chosenRun);
     renderPlanRunInfo();
+}
+
+// Apply the solver's answer. If the solver stopped before proving it optimal
+// (time limit on a slow device or a very over-full plan), its best-so-far can
+// be worse than the quick planner's, so run that too and keep whichever
+// leaves fewer required courses — then fewer courses — unplaced. Shared with
+// the test suite.
+function settleOptimalRun(run, problem, placements, status) {
+    applySolverPlacements(run, problem, placements);
+    if (status === 'Optimal') return { run, keptHeuristic: false };
+
+    const solverScore = unplacedScore();
+    const solverState = { quarters: JSON.parse(JSON.stringify(quartersData)), graph, run };
+
+    const heuristicRun = planHeuristic();
+    const heuristicScore = unplacedScore();
+    const heuristicBetter = heuristicRun && (heuristicScore.required < solverScore.required ||
+        (heuristicScore.required === solverScore.required && heuristicScore.total < solverScore.total));
+    if (heuristicBetter) return { run: heuristicRun, keptHeuristic: true };
+
+    quartersData = solverState.quarters;
+    graph = solverState.graph;
+    run.academicQuarters = run.academicQuarters.map(q => getQuarterById(q.id));
+    return { run, keptHeuristic: false };
+}
+
+function unplacedScore() {
+    const unplaced = Object.values(graph).filter(node => !node.placed);
+    return { required: unplaced.filter(isRequiredCourse).length, total: unplaced.length };
 }
 
 // Put the solver's { courseId: quarterId } answer into the plan. Shared with
@@ -2702,7 +2734,9 @@ function renderPlanRunInfo() {
     const el = document.getElementById('planRunInfo');
     if (!el || !lastPlanRun) return;
     const ms = Math.max(1, Math.round(lastPlanRun.ms || 0));
-    if (lastPlanRun.engine === 'optimal') {
+    if (lastPlanRun.engine === 'optimal' && lastPlanRun.keptHeuristic) {
+        el.textContent = `Optimal planner ran out of time (${ms} ms); kept the quick planner's better plan`;
+    } else if (lastPlanRun.engine === 'optimal') {
         const proven = lastPlanRun.status === 'Optimal' ? 'optimal plan' : 'best plan found';
         el.textContent = `Optimal planner · ${proven} in ${ms} ms`;
     } else if (lastPlanRun.fallbackReason) {
@@ -2779,8 +2813,15 @@ function preparePlanningRun() {
 // Heuristic planner: greedy quarter-by-quarter sweep. Used when the optimal
 // planner is turned off or unavailable.
 function autoPlanHeuristic() {
+    const run = planHeuristic();
+    if (run) finishPlanningRun(run);
+}
+
+// The sweep itself, without the wrap-up, so its result can be compared with
+// the solver's before either is shown.
+function planHeuristic() {
     const run = preparePlanningRun();
-    if (!run) return;
+    if (!run) return null;
     const { academicQuarters, addFixedCoursesBefore, completed,
         categoryPlacedCounts, categoryPlacedUnits, scores } = run;
 
@@ -2867,7 +2908,7 @@ function autoPlanHeuristic() {
         quarter.classes.forEach(id => completed.add(id));
     }
 
-    finishPlanningRun(run);
+    return run;
 }
 
 // Shared wrap-up: explain every course left unassigned, then re-render.

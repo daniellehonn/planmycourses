@@ -140,6 +140,7 @@ function createPlanner(options = {}) {
             const problem = run('buildSolverProblem(__run)');
             let status = 'Nothing to place';
             let stats = null;
+            let keptHeuristic = false;
             if (problem.courses.length > 0) {
                 const model = solver.buildPlanModel(problem);
                 stats = model.stats;
@@ -148,10 +149,15 @@ function createPlanner(options = {}) {
                 if (!result.Columns) throw new Error(`Solver returned no solution (${status})`);
                 context.__problem = problem;
                 context.__placements = solver.decodePlanSolution(problem, result.Columns);
-                run('applySolverPlacements(__run, __problem, __placements)');
+                context.__status = status;
+                // Same rule as the app: an unproven solver plan is compared
+                // with the quick planner's and the better one kept
+                const settled = run('settleOptimalRun(__run, __problem, __placements, __status)');
+                keptHeuristic = settled.keptHeuristic;
+                context.__run = settled.run;
             }
             run('finishPlanningRun(__run)');
-            return { engine: 'optimal', ms: performance.now() - start, status, stats };
+            return { engine: 'optimal', ms: performance.now() - start, status, stats, keptHeuristic };
         },
 
         // Plain-data view of the current plan
