@@ -38,7 +38,9 @@ function fakeElement() {
         hidden: false,
         disabled: false,
         download: '',
-        innerHTML: '',
+        // Setting innerHTML (e.g. to '') replaces the children, as in a browser
+        set innerHTML(html) { this.children = []; this._html = html; },
+        get innerHTML() { return this._html || ''; },
         textContent: '',
         appendChild(child) { this.children.push(child); return child; },
         append(...nodes) { this.children.push(...nodes); },

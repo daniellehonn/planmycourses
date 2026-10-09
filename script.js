@@ -8,7 +8,7 @@ let currentAcademicSystem = 'quarter'; // 'quarter' or 'semester'
 
 // Dynamic settings based on graduation timeline
 let dynamicSettings = {
-    quartersToGraduate: 12,
+    quartersToGraduate: 16,
     useCustomQuarters: false,
     customQuarters: 16
 };
@@ -193,6 +193,10 @@ async function processTSVData(tsvData) {
 
     // If validation passes, assign to global variable
     ALL_CLASSES_DATA = courseData;
+
+    // A new list starts with no plan: clear the last run and its message
+    lastPlanRun = null;
+    clearPlanStatus();
 
     // Initialize fresh quarters with no pinned courses or locks left over
     // from a previously loaded course list
@@ -1216,6 +1220,14 @@ function reportPlanOutcome(run) {
     showPlanStatus(message, 'warning', actions);
 }
 
+// After a planning setting changes, the last Auto Plan result (and its
+// message) no longer matches: e.g. a new Year 4 stays empty until re-planned.
+function markPlanStale(what) {
+    if (!lastPlanRun) return;
+    showPlanStatus(`${what} changed, so the plan below is out of date.`, 'warning',
+        [{ label: 'Re-plan now', onClick: () => autoPlanCoreCourses() }]);
+}
+
 // ----- Max units in the toolbar (blank = automatic) -----
 function handleMaxUnitsQuickChange(value) {
     const n = parseInt(value);
@@ -1226,6 +1238,7 @@ function handleMaxUnitsQuickChange(value) {
         PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER = false;
     }
     updateDynamicSettings();
+    markPlanStale('Max units');
 }
 
 function syncMaxUnitsQuick() {
@@ -2620,6 +2633,9 @@ function buildSolverProblem(run) {
         q.classes.forEach(id => {
             if (!graph[id] || !graph[id].placed) return;
             fixed[id] = order;
+            // Locked/summer courses are history; only pins in open terms
+            // need their prerequisites scheduled first
+            if (q.name.toLowerCase().includes('summer') || isQuarterLocked(q.id)) return;
             fixedCourses.push({
                 id,
                 order,
@@ -2740,6 +2756,9 @@ function renderPlanRunInfo() {
 function preparePlanningRun() {
     const unassignedQuarter = resetQuartersForPlanning();
     if (!unassignedQuarter) return null;
+    // Locks and pins may have changed since the automatic units were computed
+    applyAutomaticUnitSettings();
+    syncMaxUnitsQuick();
 
     syncCategoryPriorityWithData();
     const requirementWeights = deriveRequirementWeights();
@@ -2815,9 +2834,14 @@ function planHeuristic() {
     // A pinned/fixed course's prerequisites (transitively) must land strictly
     // before it. deadlineOrder[id] = earliest chronological order of any
     // pre-placed course that depends on id.
+    // Courses in locked or summer terms are history (already taken), so they
+    // don't constrain anything; and a deadline no open term can meet is
+    // dropped rather than leaving the prerequisite (and its chain) unplaced.
     const deadlineOrder = {};
+    const firstOpenOrder = academicQuarters.length > 0
+        ? getQuarterChronologicalOrder(academicQuarters[0]) : Infinity;
     quartersData.forEach(q => {
-        if (q.id === 'unassigned') return;
+        if (q.id === 'unassigned' || q.name.toLowerCase().includes('summer') || isQuarterLocked(q.id)) return;
         const order = getQuarterChronologicalOrder(q);
         const stack = q.classes.filter(id => graph[id] && graph[id].placed);
         const seen = new Set();
@@ -2829,7 +2853,9 @@ function planHeuristic() {
             node.prerequisites.filter(entry => prereqAlternatives(entry).length === 1).forEach(prereqId => {
                 if (seen.has(prereqId)) return;
                 seen.add(prereqId);
-                deadlineOrder[prereqId] = Math.min(deadlineOrder[prereqId] ?? Infinity, order);
+                if (order > firstOpenOrder) {
+                    deadlineOrder[prereqId] = Math.min(deadlineOrder[prereqId] ?? Infinity, order);
+                }
                 stack.push(prereqId);
             });
         }
@@ -3561,7 +3587,8 @@ function saveSettings() {
     localStorage.setItem('plannerEngine', plannerEngine);
 
     closeSettingsModal();
-    showSuccessMessage('Settings saved. Run Auto Plan to apply them.');
+    if (lastPlanRun) markPlanStale('Settings');
+    else showSuccessMessage('Settings saved.');
 }
 
 function resetToDefaults() {
@@ -3741,59 +3768,63 @@ function updateAcademicSystemUI() {
 }
 
 // Dynamic Settings Functions
+// Automatic min / max / target units per term. Spreads the units still to
+// plan over the terms still open: courses in locked or summer terms are
+// already done, and those terms take nothing new, so counting them would
+// leave the open terms short.
 function calculateDynamicSettings() {
     const quartersToGrad = dynamicSettings.useCustomQuarters ?
         dynamicSettings.customQuarters :
         dynamicSettings.quartersToGraduate;
 
-    // Calculate academic quarters (excluding summer)
-    const academicQuarters = currentAcademicSystem === 'quarter' ?
-        Math.floor(quartersToGrad * 0.75) : // 3/4 of quarters are academic (no summer)
-        quartersToGrad; // All semesters are academic
-
-    // Calculate actual total units from loaded course data
-    let actualTotalUnits = 180; // Default fallback
-    let courseCount = 0;
-
     const activeCourses = ALL_CLASSES_DATA.filter(course => course.enabled !== false);
+    const totalUnits = activeCourses.length > 0
+        ? activeCourses.reduce((sum, course) => sum + (course.units || 0), 0)
+        : 180; // nothing loaded yet
 
-    if (activeCourses.length > 0) {
-        // Calculate from actual course data
-        const requiredCourses = activeCourses.filter(course =>
-            course.category === "Required" || course.category === "Capstone" || course.category === "External"
-        );
-
-        actualTotalUnits = requiredCourses.reduce((sum, course) => sum + (course.units || 0), 0);
-        courseCount = requiredCourses.length;
-
-        // If no required courses found, use all courses
-        if (actualTotalUnits === 0) {
-            actualTotalUnits = activeCourses.reduce((sum, course) => sum + (course.units || 0), 0);
-            courseCount = activeCourses.length;
-        }
+    const isClosed = q => q.name.toLowerCase().includes('summer') || isQuarterLocked(q.id);
+    const terms = quartersData.filter(q => q.id !== 'unassigned');
+    let openTerms = terms.filter(q => !isClosed(q)).length;
+    let unitsToPlan = totalUnits - terms.filter(isClosed)
+        .reduce((sum, q) => sum + q.classes.reduce((u, id) => u + (findClassById(id)?.units || 0), 0), 0);
+    if (openTerms === 0) {
+        // Grid not built yet: estimate from the timeline (summers excluded)
+        openTerms = currentAcademicSystem === 'quarter' ? Math.floor(quartersToGrad * 0.75) : quartersToGrad;
+        unitsToPlan = totalUnits;
     }
 
-    // Calculate units per term based on actual data
-    const unitsPerTerm = actualTotalUnits / academicQuarters;
-
-    // Dynamic calculations for balanced distribution
+    const unitsPerTerm = Math.max(0, unitsToPlan) / Math.max(1, openTerms);
     const minUnits = 12; // Hard-set to 12 units
     // Never below the minimum load or below the largest single course, or
     // that course could never be scheduled.
     const largestCourseUnits = activeCourses.reduce((max, c) => Math.max(max, c.units || 0), 0);
     const maxUnits = Math.max(minUnits, largestCourseUnits,
         Math.min(22, Math.ceil(unitsPerTerm * 1.06)));
-    const targetUnits = Math.round(unitsPerTerm);
+    const targetUnits = Math.min(maxUnits, Math.max(1, Math.round(unitsPerTerm)));
 
     return {
         minUnits,
         maxUnits,
         targetUnits,
-        academicQuarters,
+        academicQuarters: openTerms,
         unitsPerTerm: unitsPerTerm.toFixed(1),
-        actualTotalUnits,
-        courseCount
+        actualTotalUnits: totalUnits,
+        courseCount: activeCourses.length
     };
+}
+
+// Refresh the automatic (non-overridden) unit settings from the current plan.
+function applyAutomaticUnitSettings() {
+    const calculated = calculateDynamicSettings();
+    if (!PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER) {
+        PLANNING_CONFIG.MIN_UNITS_PER_QUARTER = calculated.minUnits;
+    }
+    if (!PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER) {
+        PLANNING_CONFIG.MAX_UNITS_PER_QUARTER = calculated.maxUnits;
+    }
+    if (!PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER) {
+        PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER = calculated.targetUnits;
+    }
 }
 
 function updateDynamicSettings() {
@@ -3826,21 +3857,11 @@ function updateDynamicSettings() {
     if (newQuarters !== previousQuarters) {
         rebuildQuartersKeepingPlacements();
         renderPlanner();
+        markPlanStale('The graduation timeline');
     }
 
     // Calculate and apply dynamic settings based on actual course data
-    const calculated = calculateDynamicSettings();
-
-    // Update PLANNING_CONFIG only for non-overridden values
-    if (!PLANNING_CONFIG.overrides.MIN_UNITS_PER_QUARTER) {
-        PLANNING_CONFIG.MIN_UNITS_PER_QUARTER = calculated.minUnits;
-    }
-    if (!PLANNING_CONFIG.overrides.MAX_UNITS_PER_QUARTER) {
-        PLANNING_CONFIG.MAX_UNITS_PER_QUARTER = calculated.maxUnits;
-    }
-    if (!PLANNING_CONFIG.overrides.TARGET_UNITS_PER_QUARTER) {
-        PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER = calculated.targetUnits;
-    }
+    applyAutomaticUnitSettings();
 
     // Save settings
     saveDynamicSettings();
@@ -3891,6 +3912,7 @@ function updateAcademicSystem() {
     
     // Recalculate dynamic settings
     updateDynamicSettings();
+    markPlanStale('The term system');
     
     // Save to localStorage
     localStorage.setItem('academicSystem', currentAcademicSystem);

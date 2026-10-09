@@ -188,3 +188,41 @@ test('export then import restores the plan and locks only Taken terms', async ()
     // Planned courses aren't pinned, so Auto Plan is still free to move them
     assert.equal(reloaded.run('pinnedCourses.size'), original.run('pinnedCourses.size'));
 });
+
+test('automatic max units spreads what is left over the open terms', async () => {
+    const planner = await createPlanner({ terms: 16 }).load(SAMPLE);
+    const s = planner.snapshot();
+    const open = s.terms.filter(t => !t.locked && !t.summer);
+    const closedUnits = s.terms.filter(t => t.locked || t.summer).reduce((sum, t) => sum + t.units, 0);
+    const totalUnits = s.courses.reduce((sum, c) => sum + c.units, 0);
+    assert.ok(s.maxUnits * open.length >= totalUnits - closedUnits,
+        `${open.length} open terms × ${s.maxUnits} < ${totalUnits - closedUnits} units to plan`);
+    assert.ok(s.targetUnits <= s.maxUnits);
+});
+
+test('the default 4-year plan fits every course of the sample', async () => {
+    const planner = await createPlanner({}).load(SAMPLE);
+    await planner.runOptimal({ timeLimitSeconds: 10 });
+    assert.deepEqual(planner.snapshot().unassigned, []);
+});
+
+test('courses in locked (taken) terms do not hold back their prerequisites', async () => {
+    // In semester mode the sample's Winter-term courses (e.g. CS 32) have no
+    // matching term, so they must be planned even though later courses that
+    // need them (CS 33, Spring Y1) are already locked in.
+    const planner = await createPlanner({ system: 'semester', terms: 8 }).load(SAMPLE);
+    planner.runHeuristic();
+    const s = planner.snapshot();
+    const requiredLeft = s.courses.filter(c => c.required && s.unassigned.includes(c.id));
+    assert.deepEqual(requiredLeft.map(c => c.id), []);
+});
+
+test('changing the timeline after planning says the plan is out of date', async () => {
+    const planner = await createPlanner({ terms: 12 }).load(SAMPLE);
+    planner.run('autoPlanCoreCourses()'); // no Worker in Node, so this runs the quick planner
+    planner.run(`document.getElementById('quartersToGraduateNew').value = '16'; updateDynamicSettings();`);
+    const status = planner.status();
+    assert.equal(status.kind, 'warning');
+    assert.match(status.text, /out of date/);
+    assert.ok(status.actions.some(a => a.textContent === 'Re-plan now'));
+});
