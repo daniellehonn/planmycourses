@@ -18,15 +18,6 @@ const PLANNING_CONFIG = {
     MAX_UNITS_PER_QUARTER: 16,
     MIN_UNITS_PER_QUARTER: 12,
     TARGET_UNITS_PER_QUARTER: 13,
-    MAX_ATTEMPTS_MIN_UNITS: 5,
-    SCORING: {
-        UNDER_MIN_UNITS_BONUS: 300,
-        MEETS_MIN_UNITS_BONUS: 150,
-        OVER_MAX_UNITS_PENALTY: 1000,
-        UNITS_DEVIATION_PENALTY: 10,
-        LATER_QUARTER_PENALTY: 15,
-        HEAVY_COURSE_STACKING_PENALTY: 20
-    },
     // Track which settings are overridden by user
     overrides: {
         MAX_UNITS_PER_QUARTER: false,
@@ -72,7 +63,10 @@ const WORKLOAD_CONFIG = {
     OVERLOAD_PENALTY_PER_UNIT: 10,
     BALANCED_BONUS: 10,
     ALL_TECHNICAL_PENALTY: 20,
-    TARGET_COURSE_COUNT: 4
+    // Per required course in a combination. Large enough that any eligible
+    // required course outranks every optional one, so optional courses only
+    // use capacity that required courses can't.
+    REQUIRED_COURSE_BONUS: 1000
 };
 
 // Planning speed: 'balanced' (default) spreads workload evenly; 'fastest'
@@ -265,7 +259,10 @@ async function processTSVData(tsvData) {
                      ? row['Corequisites'].split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                      : [],
         description: row['Description'],
-        units: parseInt(row['Units']) || parseInt(row['Difficulty']) || 0,
+        // Units and Difficulty are separate when both columns exist; older
+        // sheets with only Difficulty use it for both.
+        units: parseCourseNumber(row['Units']) ?? parseCourseNumber(row['Difficulty']) ?? 0,
+        difficulty: parseCourseNumber(row['Difficulty']) ?? parseCourseNumber(row['Units']) ?? 0,
         reqSatisfied: row['Req Satisfied'] ? row['Req Satisfied'].trim() : 'Required', // New column for requirement category
         category: "Required", // Default all courses to Required
         taken: row['Taken'] ? row['Taken'].trim() : '',
@@ -569,6 +566,17 @@ function isActiveCourseId(classId) {
 // Prerequisites are a list of entries that must ALL be met (comma-separated
 // in the sheet). An entry may be an OR-group written "CS 31 / CS 31E": it is
 // met when ANY of its courses is done.
+function parseCourseNumber(value) {
+    const n = parseInt(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+// Difficulty drives workload balancing; saved data from before the separate
+// column existed falls back to units.
+function getCourseDifficulty(course) {
+    return course.difficulty ?? course.units ?? 0;
+}
+
 function parsePrerequisites(raw) {
     if (!raw || raw.trim() === '' || raw.trim().toLowerCase() === 'none') return [];
     return raw.split(',')
@@ -898,7 +906,8 @@ function renderRawDataTable() {
             prerequisites: course.prerequisites.join(', '),
             corequisites: course.corequisites.join(', '),
             description: course.description || '',
-            units: course.units != null ? String(course.units) : ''
+            units: course.units != null ? String(course.units) : '',
+            difficulty: String(getCourseDifficulty(course))
         }));
     });
 }
@@ -920,7 +929,7 @@ function createRawDataRow(values) {
     tr.appendChild(enabledTd);
     if (values.enabled === false) tr.classList.add('raw-data-row-disabled');
 
-    const fields = ['taken', 'reqSatisfied', 'id', 'prerequisites', 'corequisites', 'description', 'units'];
+    const fields = ['taken', 'reqSatisfied', 'id', 'prerequisites', 'corequisites', 'description', 'units', 'difficulty'];
 
     fields.forEach(field => {
         const td = document.createElement('td');
@@ -973,7 +982,8 @@ function applyRawDataToPlanner() {
                     ? coreqRaw.split(/,\s*|\/\s*/).map(p => p.trim()).filter(p => p)
                     : [],
                 description: get('description'),
-                units: parseInt(get('units')) || 0,
+                units: parseCourseNumber(get('units')) ?? 0,
+                difficulty: parseCourseNumber(get('difficulty')) ?? parseCourseNumber(get('units')) ?? 0,
                 reqSatisfied: get('reqSatisfied') || 'Required',
                 category: 'Required',
                 taken: get('taken'),
@@ -1922,7 +1932,7 @@ function computePriorityScore(courseNode, graph, requirementWeights) {
     // A course counting toward several categories takes the highest weight
     const requirementWeight = Math.max(1,
         ...getCourseCategories(course).map(c => requirementWeights[c] ?? 1));
-    const difficultyPenalty = (course.units || 0) * 2;
+    const difficultyPenalty = getCourseDifficulty(course) * 2;
 
     return (
         10 * requiredDirect +
@@ -1970,9 +1980,18 @@ function scoreCombination(combo, quarter, scores) {
     const addedUnits = combo.reduce((s, n) => s + n.course.units, 0);
     const totalUnits = quarter.units + addedUnits;
 
-    // Over-difficulty penalty (uses units as difficulty proxy)
-    if (totalUnits > workloadConfig.MAX_DIFFICULTY_PER_QUARTER) {
-        score -= (totalUnits - workloadConfig.MAX_DIFFICULTY_PER_QUARTER)
+    score += combo.filter(isRequiredCourse).length * workloadConfig.REQUIRED_COURSE_BONUS;
+
+    // Over-difficulty penalty: total difficulty of what's already in the
+    // quarter plus this combination
+    const existingDifficulty = quarter.classes.reduce((sum, id) => {
+        const course = findClassById(id);
+        return sum + (course ? getCourseDifficulty(course) : 0);
+    }, 0);
+    const totalDifficulty = existingDifficulty +
+        combo.reduce((sum, n) => sum + getCourseDifficulty(n.course), 0);
+    if (totalDifficulty > workloadConfig.MAX_DIFFICULTY_PER_QUARTER) {
+        score -= (totalDifficulty - workloadConfig.MAX_DIFFICULTY_PER_QUARTER)
             * workloadConfig.OVERLOAD_PENALTY_PER_UNIT;
     }
 
@@ -2905,7 +2924,7 @@ function downloadPlan() {
     }
 
     // Create CSV content with new format
-    let csvContent = "Taken,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Units\n";
+    let csvContent = "Taken,Req Satisfied,Course Number,Prerequisites,Corequisites,Description,Units,Difficulty\n";
 
     // Process all courses in their original order
     ALL_CLASSES_DATA.forEach(courseData => {
@@ -2931,7 +2950,7 @@ function downloadPlan() {
         // display name) because other rows' prerequisites reference the id.
         const csvField = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
         csvContent += [takenValue, reqSatisfied, courseData.id, prerequisites, corequisites,
-            courseData.description || '', courseData.units].map(csvField).join(',') + '\n';
+            courseData.description || '', courseData.units, getCourseDifficulty(courseData)].map(csvField).join(',') + '\n';
     });
     
     // Create and download the file
