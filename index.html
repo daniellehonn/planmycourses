@@ -80,9 +80,6 @@
             <h1>Interactive Class Planner</h1>
             <div class="header-buttons">
                 <button class="help-button" onclick="toggleSidebar()">Help</button>
-                <button id="accountButton" class="account-button" onclick="openAccountModal()" title="Account">
-                    <span id="accountButtonLabel">Sign In</span>
-                </button>
             </div>
         </div>
 
@@ -154,6 +151,7 @@
                 <div class="toolbar-actions">
                     <button id="autoPlanButton" class="primary-button" onclick="autoPlanCoreCourses()">Auto Plan Courses</button>
                     <button id="settingsButton" class="secondary-button" onclick="openSettingsModal()">More settings</button>
+                    <button id="shareButton" class="secondary-button" onclick="sharePlan()">Share</button>
                     <button id="downloadButton" class="secondary-button" onclick="downloadPlan()">Export</button>
                 </div>
             </div>
@@ -223,59 +221,6 @@
                             <!-- Editable rows populated here -->
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Account Modal -->
-    <div class="settings-modal-overlay" id="accountModalOverlay" onclick="closeAccountModal()">
-        <div class="settings-modal" onclick="event.stopPropagation()">
-            <div class="settings-header">
-                <h3>Account</h3>
-                <button class="modal-close" onclick="closeAccountModal()">×</button>
-            </div>
-            <div class="settings-content">
-                <div id="accountSignedOutView">
-                    <p class="settings-description">Sign in to save your course list, plan, and settings to your
-                        account. This is optional — the planner works fully without an account, using just your
-                        browser.</p>
-
-                    <div id="accountError" class="error-message"></div>
-
-                    <div class="setting-item">
-                        <label for="accountEmail">Email</label>
-                        <input type="email" id="accountEmail" placeholder="you@example.com" class="account-input" autocomplete="email">
-                    </div>
-                    <div class="setting-item">
-                        <label for="accountPassword">Password</label>
-                        <input type="password" id="accountPassword" placeholder="At least 6 characters" class="account-input" autocomplete="current-password">
-                    </div>
-
-                    <div class="settings-actions">
-                        <button class="secondary-button" onclick="handleSignUp()">Create Account</button>
-                        <button class="primary-button" onclick="handleSignIn()">Sign In</button>
-                    </div>
-                </div>
-
-                <div id="accountSignedInView" style="display: none;">
-                    <p class="settings-description">Signed in as <strong id="accountEmailDisplay"></strong></p>
-
-                    <div id="accountStatusMessage" class="account-status-message" style="display: none;"></div>
-
-                    <div class="settings-section">
-                        <h4>Save & Load</h4>
-                        <p class="settings-description">Saves your course list, quarter placements, pins, locks, and
-                            planning settings to your account. Loading replaces what's currently in the planner.</p>
-                        <div class="settings-actions" style="justify-content: flex-start; border-top: none; padding-top: 0;">
-                            <button class="primary-button" onclick="saveToAccount()">Save to Account</button>
-                            <button class="secondary-button" onclick="loadFromAccount()">Load from Account</button>
-                        </div>
-                    </div>
-
-                    <div class="settings-actions">
-                        <button class="secondary-button" onclick="handleSignOut()">Sign Out</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -392,8 +337,6 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-    <script src="supabase-config.js"></script>
     <script src="script.js"></script>
 
     <footer class="github-footer">

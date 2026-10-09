@@ -645,35 +645,18 @@ function renderPlanner() {
     savePlanToLocalStorage();
 }
 
-// Auto-saves the course list + full plan to this browser on every render, so
-// a reload restores your last session without needing an account. This is
-// separate from (and in addition to) the optional Supabase account save.
-function localPlanSavedAt() {
-    try {
-        const raw = localStorage.getItem('plannerLocalState');
-        return raw ? (JSON.parse(raw).savedAt || 0) : 0;
-    } catch (e) {
-        return 0;
-    }
-}
-
+// Auto-saves the course list + full plan to this browser on every change, so
+// a reload restores your last session.
 function savePlanToLocalStorage() {
     if (!ALL_CLASSES_DATA || ALL_CLASSES_DATA.length === 0) return;
     try {
-        const state = {
+        localStorage.setItem('plannerLocalState', JSON.stringify({
             courseData: ALL_CLASSES_DATA,
             quartersData,
             pinnedCourses: Array.from(pinnedCourses),
-            lockedQuarters: Array.from(lockedQuarters)
-        };
-        // savedAt marks the last real change (not the last render), so it
-        // can be compared against the account copy's updated_at.
-        const previous = JSON.parse(localStorage.getItem('plannerLocalState') || 'null');
-        if (previous) {
-            const { savedAt, ...previousState } = previous;
-            if (JSON.stringify(previousState) === JSON.stringify(state)) return;
-        }
-        localStorage.setItem('plannerLocalState', JSON.stringify({ ...state, savedAt: Date.now() }));
+            lockedQuarters: Array.from(lockedQuarters),
+            savedAt: Date.now()
+        }));
     } catch (e) {
         // localStorage may be unavailable (private mode) or full; silently ignore
     }
@@ -1156,7 +1139,7 @@ document.addEventListener('keydown', (e) => {
 
 // ----- Inline status line (replaces alert() pop-ups) -----
 // kind: 'success' | 'warning' | 'error'; actions: [{ label, onClick }]
-function showPlanStatus(message, kind = 'success', actions = []) {
+function showPlanStatus(message, kind = 'success', actions = [], extra = null) {
     const el = document.getElementById('planStatus');
     if (!el) return;
     el.className = `plan-status is-${kind}`;
@@ -1165,6 +1148,7 @@ function showPlanStatus(message, kind = 'success', actions = []) {
     text.className = 'plan-status-text';
     text.textContent = message;
     el.appendChild(text);
+    if (extra) el.appendChild(extra);
     actions.forEach(action => {
         const button = document.createElement('button');
         button.type = 'button';
@@ -2984,221 +2968,213 @@ function comboRespectsCategoryTargets(combo, categoryPlacedCounts, categoryPlace
     return true;
 }
 
-// Account (Supabase) — entirely optional. If supabase-config.js hasn't been
-// filled in with a real project, supabaseClient is null and these just show
-// a "not configured" message instead of breaking anything.
-function requireSupabase() {
-    if (!supabaseClient) {
-        showAccountError('Backend not configured yet — see supabase-config.js.');
-        return false;
+// ----- Share links -----
+// The whole course list and plan are packed into the URL after "#plan=", so a
+// plan can move between devices or go to an advisor with no account or
+// server. The part after "#" is never sent to the web server.
+const SHARE_PREFIX = '#plan=';
+
+async function sharePlan() {
+    if (ALL_CLASSES_DATA.length === 0) {
+        showPlanStatus('Load a course list before sharing.', 'error');
+        return;
     }
-    return true;
+    let link;
+    try {
+        link = await buildShareLink();
+    } catch (e) {
+        showPlanStatus(`Couldn't create a share link: ${e.message}`, 'error');
+        return;
+    }
+    let copied = false;
+    try {
+        await navigator.clipboard.writeText(link);
+        copied = true;
+    } catch (e) {
+        // Clipboard can be blocked; the link is shown for manual copying
+    }
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.readOnly = true;
+    field.value = link;
+    field.className = 'share-link-field';
+    field.setAttribute('aria-label', 'Share link');
+    field.addEventListener('focus', () => field.select());
+    showPlanStatus(copied
+        ? 'Share link copied. Anyone with the link can open a copy of this plan; no account needed.'
+        : 'Copy this link to share the plan. Anyone with it can open a copy.', 'success', [], field);
+    if (!copied) field.focus();
 }
 
-function openAccountModal() {
-    document.getElementById('accountModalOverlay').classList.add('active');
-    showAccountError('');
-    updateAccountUI();
+async function buildShareLink() {
+    const index = new Map(ALL_CLASSES_DATA.map((c, i) => [c.id, i]));
+    const toIndexes = ids => (ids || []).map(id => index.get(id)).filter(i => i != null);
+    const override = key => PLANNING_CONFIG.overrides[key] ? PLANNING_CONFIG[key] : null;
+    const state = {
+        v: 1,
+        s: {
+            system: currentAcademicSystem,
+            timeline: { ...dynamicSettings },
+            speed: planningSpeed,
+            units: {
+                max: override('MAX_UNITS_PER_QUARTER'),
+                min: override('MIN_UNITS_PER_QUARTER'),
+                target: override('TARGET_UNITS_PER_QUARTER')
+            }
+        },
+        // [id, name (0 = same as id), prereqs, coreqs, description, units,
+        //  difficulty, requirement, taken, enabled, color]
+        c: ALL_CLASSES_DATA.map(c => [
+            c.id, c.name !== c.id ? c.name : 0, c.prerequisites, c.corequisites, c.description || '',
+            c.units, getCourseDifficulty(c), c.reqSatisfied || '', c.taken || '',
+            c.enabled === false ? 0 : 1, c.color || 0
+        ]),
+        // [quarter id, course indexes, pinned indexes, pins added by a lock]
+        q: quartersData
+            .filter(q => q.id !== 'unassigned' && q.classes.length > 0)
+            .map(q => [q.id, toIndexes(q.classes), toIndexes(q.pinnedClasses), toIndexes(q.lockAddedPins)]),
+        l: [...lockedQuarters],
+        t: requirementTargets,
+        p: categoryPriority
+    };
+    const payload = await encodeSharePayload(JSON.stringify(state));
+    return `${location.origin}${location.pathname}${SHARE_PREFIX}${payload}`;
 }
 
-function closeAccountModal() {
-    document.getElementById('accountModalOverlay').classList.remove('active');
+// "z" + base64url(deflate(json)) where the browser can compress, otherwise
+// "j" + base64url(json).
+async function encodeSharePayload(text) {
+    const bytes = new TextEncoder().encode(text);
+    if (typeof CompressionStream === 'undefined') return 'j' + toBase64Url(bytes);
+    const stream = new CompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    // A failure (e.g. a damaged link) surfaces when reading below; these
+    // promises reject too, so mark them handled.
+    writer.write(bytes).catch(() => {});
+    writer.close().catch(() => {});
+    return 'z' + toBase64Url(new Uint8Array(await new Response(stream.readable).arrayBuffer()));
 }
 
-function showAccountError(message) {
-    const el = document.getElementById('accountError');
-    el.textContent = message;
-    el.style.display = message ? 'block' : 'none';
+async function decodeSharePayload(payload) {
+    const bytes = fromBase64Url(payload.slice(1));
+    if (payload[0] === 'j') return new TextDecoder().decode(bytes);
+    if (payload[0] !== 'z') throw new Error('Unknown share link format');
+    const stream = new DecompressionStream('deflate-raw');
+    const writer = stream.writable.getWriter();
+    // A failure (e.g. a damaged link) surfaces when reading below; these
+    // promises reject too, so mark them handled.
+    writer.write(bytes).catch(() => {});
+    writer.close().catch(() => {});
+    return new TextDecoder().decode(await new Response(stream.readable).arrayBuffer());
 }
 
-function showAccountStatus(message, isError) {
-    const el = document.getElementById('accountStatusMessage');
-    el.textContent = message;
-    el.style.display = message ? 'block' : 'none';
-    el.classList.toggle('error', !!isError);
+function toBase64Url(bytes) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function updateAccountUI() {
-    const label = document.getElementById('accountButtonLabel');
-    const signedOutView = document.getElementById('accountSignedOutView');
-    const signedInView = document.getElementById('accountSignedInView');
+function fromBase64Url(text) {
+    const base64 = text.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(base64 + '='.repeat((4 - base64.length % 4) % 4));
+    return Uint8Array.from(binary, ch => ch.charCodeAt(0));
+}
 
-    if (!supabaseClient) {
-        label.textContent = 'Sign In';
+// Replace the current course list, plan, and planning settings with a
+// shared one, and save it in this browser.
+function applySharedState(state) {
+    const settings = state.s || {};
+    if (settings.system === 'quarter' || settings.system === 'semester') currentAcademicSystem = settings.system;
+    if (settings.timeline) Object.assign(dynamicSettings, settings.timeline);
+    if (settings.speed === 'balanced' || settings.speed === 'fastest') planningSpeed = settings.speed;
+    const units = settings.units || {};
+    [['max', 'MAX_UNITS_PER_QUARTER'], ['min', 'MIN_UNITS_PER_QUARTER'], ['target', 'TARGET_UNITS_PER_QUARTER']]
+        .forEach(([key, configKey]) => {
+            const value = units[key];
+            PLANNING_CONFIG.overrides[configKey] = value != null;
+            if (value != null) PLANNING_CONFIG[configKey] = value;
+        });
+
+    ALL_CLASSES_DATA = state.c.map((row, i) => ({
+        id: row[0],
+        name: row[1] || row[0],
+        prerequisites: row[2] || [],
+        corequisites: row[3] || [],
+        description: row[4] || '',
+        units: row[5] || 0,
+        difficulty: row[6] ?? row[5] ?? 0,
+        reqSatisfied: row[7] || 'Required',
+        category: 'Required',
+        taken: row[8] || '',
+        planned: '',
+        enabled: row[9] !== 0,
+        originalOrder: i,
+        ...(row[10] ? { color: row[10] } : {})
+    }));
+
+    pinnedCourses = new Set();
+    lockedQuarters = new Set();
+    initializeQuarters();
+    const unassigned = getQuarterById('unassigned');
+    const ids = indexes => (indexes || []).map(i => state.c[i] && state.c[i][0]).filter(Boolean);
+    (state.q || []).forEach(([quarterId, classIdx, pinnedIdx, lockPinIdx]) => {
+        const quarter = getQuarterById(quarterId);
+        if (!quarter) return;
+        const classes = ids(classIdx).filter(id => unassigned.classes.includes(id));
+        quarter.classes = classes;
+        quarter.pinnedClasses = ids(pinnedIdx).filter(id => classes.includes(id));
+        quarter.lockAddedPins = ids(lockPinIdx).filter(id => classes.includes(id));
+        quarter.units = classes.reduce((sum, id) => sum + (findClassById(id).units || 0), 0);
+        quarter.pinnedClasses.forEach(id => pinnedCourses.add(id));
+        unassigned.classes = unassigned.classes.filter(id => !classes.includes(id));
+    });
+    (state.l || []).forEach(id => { if (getQuarterById(id)) lockedQuarters.add(id); });
+    requirementTargets = state.t || {};
+    categoryPriority = Array.isArray(state.p) ? state.p : [];
+
+    try {
+        localStorage.setItem('academicSystem', currentAcademicSystem);
+        localStorage.setItem('planningSpeed', planningSpeed);
+    } catch (e) { /* storage unavailable */ }
+    persistRequirementTargets();
+    persistCategoryPriority();
+    syncTimelineControls();
+    updateDynamicSettings();
+    graph = {};
+    renderPlanner();
+    setDataSource('Shared plan');
+}
+
+// Opening a share link: load it, but ask first if this browser already has
+// a different plan saved.
+async function handleSharedLinkOnLoad() {
+    if (!location.hash.startsWith(SHARE_PREFIX)) return;
+    const payload = location.hash.slice(SHARE_PREFIX.length);
+    // Clear the address bar so a reload doesn't re-open the shared plan
+    history.replaceState(null, '', location.pathname + location.search);
+
+    let state;
+    try {
+        state = JSON.parse(await decodeSharePayload(payload));
+        if (state.v !== 1 || !Array.isArray(state.c)) throw new Error('unsupported');
+    } catch (e) {
+        showPlanStatus("This share link is incomplete or damaged, so it couldn't be opened. Ask for a new link.", 'error');
         return;
     }
 
-    supabaseClient.auth.getUser().then(({ data }) => {
-        const user = data && data.user;
-        if (user) {
-            label.textContent = user.email;
-            signedOutView.style.display = 'none';
-            signedInView.style.display = 'block';
-            document.getElementById('accountEmailDisplay').textContent = user.email;
-        } else {
-            label.textContent = 'Sign In';
-            signedOutView.style.display = 'block';
-            signedInView.style.display = 'none';
-        }
-    });
-}
-
-let hasAutoLoadedThisSession = false;
-
-function initAccountAuth() {
-    if (!supabaseClient) return;
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-        updateAccountUI();
-
-        if (session && !hasAutoLoadedThisSession &&
-            (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
-            hasAutoLoadedThisSession = true;
-            loadFromAccount({ silent: true });
-        }
-        if (event === 'SIGNED_OUT') {
-            hasAutoLoadedThisSession = false;
-        }
-    });
-    updateAccountUI();
-}
-
-function handleSignUp() {
-    if (!requireSupabase()) return;
-    const email = document.getElementById('accountEmail').value.trim();
-    const password = document.getElementById('accountPassword').value;
-    showAccountError('');
-
-    supabaseClient.auth.signUp({ email, password }).then(({ data, error }) => {
-        if (error) { showAccountError(error.message); return; }
-        if (data.user && !data.session) {
-            showAccountError('Check your email to confirm your account, then sign in.');
-        } else {
-            updateAccountUI();
-        }
-    });
-}
-
-function handleSignIn() {
-    if (!requireSupabase()) return;
-    const email = document.getElementById('accountEmail').value.trim();
-    const password = document.getElementById('accountPassword').value;
-    showAccountError('');
-
-    supabaseClient.auth.signInWithPassword({ email, password }).then(({ error }) => {
-        if (error) { showAccountError(error.message); return; }
-        updateAccountUI();
-    });
-}
-
-function handleSignOut() {
-    if (!requireSupabase()) return;
-    supabaseClient.auth.signOut().then(() => updateAccountUI());
-}
-
-function saveToAccount() {
-    if (!requireSupabase()) return;
-    supabaseClient.auth.getUser().then(({ data, error }) => {
-        if (error || !data.user) { showAccountStatus('Not signed in.', true); return; }
-
-        const payload = {
-            user_id: data.user.id,
-            course_data: ALL_CLASSES_DATA,
-            plan_data: {
-                quartersData,
-                pinnedCourses: Array.from(pinnedCourses),
-                lockedQuarters: Array.from(lockedQuarters)
-            },
-            settings: {
-                planningSpeed,
-                plannerEngine,
-                categoryPriority,
-                currentAcademicSystem,
-                dynamicSettings,
-                planningConfig: PLANNING_CONFIG,
-                requirementTargets
-            },
-            updated_at: new Date().toISOString()
-        };
-
-        supabaseClient.from('user_data').upsert(payload).then(({ error: upsertError }) => {
-            if (upsertError) {
-                showAccountStatus('Save failed: ' + upsertError.message, true);
-            } else {
-                showAccountStatus('Saved.', false);
-            }
-        });
-    });
-}
-
-function loadFromAccount(options) {
-    options = options || {};
-    if (!requireSupabase()) return;
-    supabaseClient.auth.getUser().then(({ data, error }) => {
-        if (error || !data.user) {
-            if (!options.silent) showAccountStatus('Not signed in.', true);
-            return;
-        }
-
-        supabaseClient.from('user_data').select('*').eq('user_id', data.user.id).maybeSingle()
-            .then(({ data: row, error: selectError }) => {
-                if (selectError) {
-                    if (!options.silent) showAccountStatus('Load failed: ' + selectError.message, true);
-                    return;
-                }
-                if (!row) {
-                    if (!options.silent) showAccountStatus('No saved data yet — save first.', true);
-                    return;
-                }
-
-                // On the automatic load at sign-in, don't overwrite local
-                // work that is newer than the account copy.
-                if (options.silent && localPlanSavedAt() > Date.parse(row.updated_at)) {
-                    showSuccessMessage('Kept this browser\'s plan — it\'s newer than your account copy. Save to Account to sync.');
-                    return;
-                }
-
-                ALL_CLASSES_DATA = row.course_data || [];
-
-                const plan = row.plan_data || {};
-                quartersData = plan.quartersData || [];
-                pinnedCourses = new Set(plan.pinnedCourses || []);
-                lockedQuarters = new Set(plan.lockedQuarters || []);
-
-                const settings = row.settings || {};
-                if (settings.planningSpeed) planningSpeed = settings.planningSpeed;
-                if (settings.plannerEngine) plannerEngine = settings.plannerEngine;
-                if (settings.categoryPriority) categoryPriority = settings.categoryPriority;
-                if (settings.currentAcademicSystem) currentAcademicSystem = settings.currentAcademicSystem;
-                if (settings.dynamicSettings) Object.assign(dynamicSettings, settings.dynamicSettings);
-                if (settings.planningConfig) Object.assign(PLANNING_CONFIG, settings.planningConfig);
-                if (settings.requirementTargets) requirementTargets = settings.requirementTargets;
-
-                // Persist the loaded settings locally and refresh the setting
-                // controls, so a later settings change doesn't act on stale
-                // values (e.g. an old timeline wiping the loaded plan).
-                try {
-                    localStorage.setItem('academicSystem', currentAcademicSystem);
-                    localStorage.setItem('planningSpeed', planningSpeed);
-                    localStorage.setItem('plannerEngine', plannerEngine);
-                } catch (e) { /* storage unavailable */ }
-                saveDynamicSettings();
-                persistCategoryPriority();
-                persistRequirementTargets();
-                syncTimelineControls();
-                syncMaxUnitsQuick();
-
-                graph = {};
-                renderPlanner();
-                setDataSource('From your account');
-
-                if (!options.silent) {
-                    closeAccountModal();
-                    showSuccessMessage('Loaded from account.');
-                } else if (quartersData.length > 0) {
-                    showSuccessMessage('Welcome back — loaded your saved plan.');
-                }
-            });
-    });
+    const count = state.c.length;
+    const open = () => {
+        applySharedState(state);
+        showPlanStatus(`Opened a shared plan with ${count} courses. It's now saved in this browser.`, 'success');
+    };
+    if (ALL_CLASSES_DATA.length > 0) {
+        showPlanStatus(`This link has a shared plan with ${count} courses. Opening it replaces the plan saved in this browser.`,
+            'warning', [{ label: 'Open shared plan', onClick: open }, { label: 'Keep my plan', onClick: clearPlanStatus }]);
+    } else {
+        open();
+    }
 }
 
 function toggleSidebar() {
@@ -3952,7 +3928,6 @@ function saveDynamicSettings() {
 document.addEventListener('DOMContentLoaded', () => {
     // Load saved settings first
     loadSavedSettings();
-    initAccountAuth();
 
     const dataUrlInput = getElementByIdWithFallback('dataUrlNew', 'dataUrl');
     if (dataUrlInput && dataUrlInput.value) {
@@ -3966,6 +3941,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     showDataEmptyState(false);
     syncMaxUnitsQuick();
+    handleSharedLinkOnLoad();
 });
 
 function openPlannerTemplate() {

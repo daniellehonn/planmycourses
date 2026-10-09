@@ -14,7 +14,7 @@ Given a CSV/TSV of courses (with prerequisites, corequisites, requirement catego
 - Lets the student drag and drop to override the plan, pin/lock courses and quarters, and see live dependency lines between prerequisite courses
 - Tracks requirement-category progress and exports the finished plan
 
-This is a **deterministic, rule-based planning engine** — there is currently no AI/LLM layer. All planning logic (graph construction, scoring, validation) runs client-side in the browser. Plans auto-save to the browser, and an optional Supabase account syncs your course list, plan, and settings across devices.
+This is a **deterministic, rule-based planning engine** — there is currently no AI/LLM layer. All planning logic (graph construction, scoring, validation) runs client-side in the browser. There are no accounts and no server: plans auto-save in your browser, and **Share** creates a link that opens a copy of the plan on any device.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ This is a **deterministic, rule-based planning engine** — there is currently n
 3. Download it as CSV and click **Upload CSV**, or publish it to the web (File → Share → Publish to web → Comma-separated values) and paste the link
 4. Pick quarters or semesters, how long you have to graduate, and (optionally) max units per term, then click **Auto Plan Courses**
 5. Drag courses to adjust, or click a course to see its details and move it from there (this also works on phones). Pin courses or lock terms that shouldn't move
-6. Export the finished plan. The file re-imports as-is: courses you took stay in `Taken` (locked), and the rest of the plan goes in a `Planned` column.
+6. Share the plan as a link (copied to your clipboard), or export the finished plan. The file re-imports as-is: courses you took stay in `Taken` (locked), and the rest of the plan goes in a `Planned` column.
 
 ### Course data format
 
@@ -82,12 +82,12 @@ This section tracks the project against the four-version roadmap outlined by the
 | **V2 — Personalized optimization** | Weighted scoring, combinatorial quarter selection | Mostly built. Missing: multiple named plan variants (fastest / balanced / interest-focused / flexible-with-backups), interest-alignment and graduation-speed scoring terms, alternative-plan comparison UI |
 | **V3 — AI copilot** | Natural-language constraint parsing, planning chat | Not started |
 | **V4 — Recovery agent** | Handle unavailable courses, propose alternatives with trade-off explanations | Not started |
-| **Backend & database** | FastAPI services, Postgres persistence, plan versioning | Partial — optional Supabase auth + one `user_data` row per user (RLS); no plan versioning or server-side planning |
+| **Backend & database** | FastAPI services, Postgres persistence, plan versioning | Not started — static site. (An optional Supabase login existed briefly and was removed in favor of share links; see git history.) |
 | **Evaluation plan** | Benchmark suite, metrics, user study | Not started |
 
 ## Architecture (current)
 
-Static frontend — `index.html`, `styles.css`, `script.js` — served from GitHub Pages. Course data is loaded from a pasted TSV link or uploaded CSV. The plan auto-saves to localStorage on every change. Signing in (Supabase email auth, configured in `supabase-config.js`, schema in `supabase-schema.sql`) adds Save/Load to Account; on sign-in the account copy loads unless this browser has newer changes. There are no plan versions yet.
+Static frontend — `index.html`, `styles.css`, `script.js` — served from GitHub Pages. Course data is loaded from a pasted TSV link or uploaded CSV. The plan auto-saves to localStorage on every change. **Share** packs the course list, plan, pins, locks, and planning settings into the URL fragment (`#plan=`, deflate-compressed and base64url-encoded, about 2–3 KB for 50 courses). The fragment never reaches the server. Opening the link loads the plan, asking first if the browser already has a different one. There are no plan versions yet.
 
 ### Target architecture (per roadmap)
 
@@ -124,7 +124,6 @@ The suite loads the real `script.js` into a Node VM with a minimal fake DOM, so 
 - `index.html` / `styles.css` / `script.js` — the app
 - `solver.js` / `solver-worker.js` — the optimal planner (integer-program model + HiGHS Web Worker)
 - `tests/` — test suite and planner comparison (`npm test`, `npm run compare`)
-- `supabase-config.js` / `supabase-schema.sql` — optional account sync (project URL + public key, and the `user_data` table with row-level security)
 - `course_scheduler_algorithm_spec.md` — detailed algorithm spec (priority scoring, workload balancing, edge cases)
 - `instructions.md` — end-user setup instructions for the Google Sheets template
 - `DANIELLEHON-FINAL_*.csv` — sample course list

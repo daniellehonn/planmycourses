@@ -66,6 +66,8 @@ function createPlanner(options = {}) {
 
     const storage = {};
     const exported = { csv: null };
+    const clipboard = { text: null };
+    const location = { origin: 'https://planner.test', pathname: '/', search: '', hash: options.hash || '' };
     const context = {
         document: {
             getElementById,
@@ -84,6 +86,10 @@ function createPlanner(options = {}) {
             removeItem: k => { delete storage[k]; }
         },
         CSS: { escape: s => s },
+        location,
+        history: { replaceState: (_, __, url) => { location.hash = url.includes('#') ? url.slice(url.indexOf('#')) : ''; } },
+        navigator: { clipboard: { writeText: async (text) => { clipboard.text = text; } } },
+        CompressionStream, DecompressionStream, Response, TextEncoder, TextDecoder, btoa, atob,
         Blob: function (parts) { exported.csv = parts.join(''); },
         URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} },
         setTimeout: () => 0,
@@ -104,6 +110,15 @@ function createPlanner(options = {}) {
         run,
         context,
         exported,
+        clipboard,
+        location,
+
+        // Text and kind ('success' | 'warning' | 'error') of the status line
+        status() {
+            const el = getElementById('planStatus');
+            const text = (el.children[0] && el.children[0].textContent) || '';
+            return { kind: (el.className.match(/is-(\w+)/) || [])[1] || '', text, actions: el.children.filter(c => c.onclick && c.textContent !== '×') };
+        },
 
         // Evaluate an expression and return it as plain Node data (objects
         // from the VM have their own prototypes, which deepEqual rejects)
