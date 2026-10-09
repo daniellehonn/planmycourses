@@ -2470,9 +2470,213 @@ function finalizeUnassignedCourses(graph) {
         });
 }
 
+// Planner engine: 'optimal' solves the whole plan as an integer program with
+// HiGHS (solver.js, in a Web Worker); 'heuristic' is the greedy sweep below.
+// Optimal falls back to heuristic if the solver can't load or run.
+let plannerEngine = 'optimal';
+// Shown under the Auto Plan button: which engine ran and how long it took.
+let lastPlanRun = null;
+let solverWorker = null;
+let solverRequestId = 0;
+let planningInProgress = false;
+
+const SOLVER_TIME_LIMIT_SECONDS = 10;
+// Allowance for downloading the ~3 MB solver the first time
+const SOLVER_LOAD_ALLOWANCE_MS = 20000;
+
 function autoPlanCoreCourses() {
+    if (planningInProgress) return;
+    if (plannerEngine === 'optimal' && typeof Worker !== 'undefined') {
+        planningInProgress = true;
+        setAutoPlanBusy(true);
+        return autoPlanOptimal()
+            .catch(err => {
+                console.warn('Optimal planner failed; using the heuristic planner instead.', err);
+                const start = performance.now();
+                autoPlanHeuristic();
+                lastPlanRun = { engine: 'heuristic', ms: performance.now() - start, fallbackReason: err.message };
+                renderPlanRunInfo();
+            })
+            .finally(() => {
+                planningInProgress = false;
+                setAutoPlanBusy(false);
+            });
+    }
+    const start = typeof performance !== 'undefined' ? performance.now() : 0;
+    autoPlanHeuristic();
+    lastPlanRun = { engine: 'heuristic', ms: (typeof performance !== 'undefined' ? performance.now() : 0) - start };
+    renderPlanRunInfo();
+}
+
+async function autoPlanOptimal() {
+    const run = preparePlanningRun();
+    if (!run) return;
+    const problem = buildSolverProblem(run);
+
+    if (problem.courses.length > 0) {
+        const result = await solveInWorker(problem);
+        problem.courses.forEach(course => {
+            const quarterId = result.placements[course.id];
+            if (!quarterId) return;
+            const quarter = getQuarterById(quarterId);
+            const node = graph[course.id];
+            quarter.classes.push(course.id);
+            quarter.units += node.course.units;
+            node.placed = true;
+            node.unassignedReason = '';
+            incrementCategoryCounts(node.course, run.categoryPlacedCounts, run.categoryPlacedUnits);
+        });
+        lastPlanRun = { engine: 'optimal', ms: result.ms, status: result.status, stats: result.stats };
+    } else {
+        lastPlanRun = { engine: 'optimal', ms: 0, status: 'Nothing to place' };
+    }
+
+    // The solver plans whole-term combinations, so there are no per-quarter
+    // runner-up lists like the heuristic produces.
+    run.academicQuarters.forEach(q => { q.backupOptions = []; });
+    finishPlanningRun(run);
+    renderPlanRunInfo();
+}
+
+// Turn the prepared planning state into the plain problem solver.js expects.
+function buildSolverProblem(run) {
+    const relevant = id => !!graph[id];
+    const terms = run.academicQuarters.map(q => ({
+        id: q.id,
+        order: getQuarterChronologicalOrder(q),
+        fixedUnits: q.units,
+        fixedDifficulty: q.classes.reduce((sum, id) => {
+            const course = findClassById(id);
+            return sum + (course ? getCourseDifficulty(course) : 0);
+        }, 0)
+    }));
+
+    const fixed = {};
+    const fixedCourses = [];
+    quartersData.forEach(q => {
+        if (q.id === 'unassigned') return;
+        const order = getQuarterChronologicalOrder(q);
+        q.classes.forEach(id => {
+            if (!graph[id] || !graph[id].placed) return;
+            fixed[id] = order;
+            fixedCourses.push({
+                id,
+                order,
+                prerequisites: graph[id].prerequisites.map(entry => prereqAlternatives(entry).filter(relevant))
+            });
+        });
+    });
+
+    const courses = Object.values(graph)
+        .filter(node => !node.placed)
+        .map(node => ({
+            id: node.course.id,
+            units: node.course.units || 0,
+            difficulty: getCourseDifficulty(node.course),
+            required: isRequiredCourse(node),
+            score: run.scores.get(node.course.id) || 0,
+            prerequisites: node.prerequisites.map(entry => prereqAlternatives(entry).filter(relevant)),
+            corequisites: node.corequisites.filter(relevant),
+            categories: getCourseCategories(node.course)
+        }));
+
+    // Room left under each graduation-requirement target after fixed courses
+    const targets = {};
+    Object.entries(requirementTargets).forEach(([category, target]) => {
+        if (!target) return;
+        targets[category] = {
+            count: target.count != null ? target.count - (run.categoryPlacedCounts[category] || 0) : null,
+            units: target.units != null ? target.units - (run.categoryPlacedUnits[category] || 0) : null
+        };
+    });
+
+    const workload = getEffectiveWorkloadConfig();
+    const maxUnits = getEffectiveMaxUnitsPerQuarter();
+    return {
+        terms,
+        fixed,
+        fixedCourses,
+        courses,
+        targets,
+        config: {
+            maxUnits,
+            // Fastest mode packs terms up to the cap; Balanced aims for the
+            // target load and only goes above it when that's the only way
+            // to fit courses in.
+            targetUnits: planningSpeed === 'fastest' ? maxUnits
+                : Math.min(maxUnits, PLANNING_CONFIG.TARGET_UNITS_PER_QUARTER || maxUnits),
+            maxDifficulty: workload.MAX_DIFFICULTY_PER_QUARTER,
+            overloadPenalty: 20,
+            difficultyPenalty: workload.OVERLOAD_PENALTY_PER_UNIT
+        }
+    };
+}
+
+function solveInWorker(problem) {
+    if (!solverWorker) {
+        solverWorker = new Worker('solver-worker.js');
+    }
+    const id = ++solverRequestId;
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            cleanup();
+            // A hung worker can't be cancelled mid-solve; start fresh next time
+            solverWorker.terminate();
+            solverWorker = null;
+            reject(new Error('The optimal planner took too long.'));
+        }, SOLVER_TIME_LIMIT_SECONDS * 1000 + SOLVER_LOAD_ALLOWANCE_MS);
+        const onMessage = (event) => {
+            if (event.data.id !== id) return;
+            cleanup();
+            if (event.data.ok) resolve(event.data);
+            else reject(new Error(event.data.error || 'The optimal planner failed.'));
+        };
+        const onError = (event) => {
+            cleanup();
+            solverWorker = null;
+            reject(new Error(event.message || 'The optimal planner could not load.'));
+        };
+        const cleanup = () => {
+            clearTimeout(timer);
+            if (solverWorker) {
+                solverWorker.removeEventListener('message', onMessage);
+                solverWorker.removeEventListener('error', onError);
+            }
+        };
+        solverWorker.addEventListener('message', onMessage);
+        solverWorker.addEventListener('error', onError);
+        solverWorker.postMessage({ id, problem, timeLimitSeconds: SOLVER_TIME_LIMIT_SECONDS });
+    });
+}
+
+function setAutoPlanBusy(busy) {
+    const button = document.getElementById('autoPlanButton');
+    if (!button) return;
+    button.disabled = busy;
+    button.textContent = busy ? 'Planning…' : 'Auto Plan Courses';
+}
+
+function renderPlanRunInfo() {
+    const el = document.getElementById('planRunInfo');
+    if (!el || !lastPlanRun) return;
+    const ms = Math.max(1, Math.round(lastPlanRun.ms || 0));
+    if (lastPlanRun.engine === 'optimal') {
+        const proven = lastPlanRun.status === 'Optimal' ? 'optimal plan' : 'best plan found';
+        el.textContent = `Optimal planner · ${proven} in ${ms} ms`;
+    } else if (lastPlanRun.fallbackReason) {
+        el.textContent = `Heuristic planner (optimal planner unavailable: ${lastPlanRun.fallbackReason}) · ${ms} ms`;
+    } else {
+        el.textContent = `Heuristic planner · ${ms} ms`;
+    }
+    el.hidden = false;
+}
+
+// Shared setup for both planners: reset unpinned courses, build the graph,
+// mark summer/locked/pinned courses as placed, check feasibility, and score
+// every course still to place. Returns null if the planner can't run.
+function preparePlanningRun() {
     const unassignedQuarter = resetQuartersForPlanning();
-    if (!unassignedQuarter) return;
+    if (!unassignedQuarter) return null;
 
     syncCategoryPriorityWithData();
     const requirementWeights = deriveRequirementWeights();
@@ -2515,28 +2719,52 @@ function autoPlanCoreCourses() {
     });
 
     const feasibility = checkPlanningFeasibility(academicQuarters, graph);
-    if (!feasibility.feasible) {
-        const reasons = [];
-        if (!feasibility.unitsFeasible) {
-            reasons.push(
-                `${feasibility.unplacedRequiredUnits} units of unplaced courses vs ${feasibility.availableCapacity} ` +
-                `units of capacity across ${feasibility.academicQuarterCount} quarters (short by ${feasibility.shortfall} units)`
-            );
-        }
-        if (!feasibility.timelineFeasible) {
-            reasons.push(
-                `the longest prerequisite chain needs ${feasibility.minQuartersForLongestChain} quarters but only ` +
-                `${feasibility.academicQuarterCount} remain before your target graduation date`
-            );
-        }
-        alert(
-            `Course plan is infeasible: ${reasons.join('; ')}. Some courses will remain unassigned. ` +
-            `Consider raising max units in Advanced Settings, or choosing a longer Graduation Timeline in setup step 3.`
-        );
-    }
+    reportInfeasibility(feasibility);
 
     // Compute priority scores once — they depend only on graph structure,
     // not on where courses end up.
+    const scores = new Map();
+    Object.values(graph).forEach(node => {
+        if (!node.placed) {
+            scores.set(node.course.id, computePriorityScore(node, graph, requirementWeights));
+        }
+    });
+
+    return {
+        academicQuarters, addFixedCoursesBefore, completed,
+        categoryPlacedCounts, categoryPlacedUnits, scores
+    };
+}
+
+function reportInfeasibility(feasibility) {
+    if (feasibility.feasible) return;
+    const reasons = [];
+    if (!feasibility.unitsFeasible) {
+        reasons.push(
+            `${feasibility.unplacedRequiredUnits} units of unplaced courses vs ${feasibility.availableCapacity} ` +
+            `units of capacity across ${feasibility.academicQuarterCount} quarters (short by ${feasibility.shortfall} units)`
+        );
+    }
+    if (!feasibility.timelineFeasible) {
+        reasons.push(
+            `the longest prerequisite chain needs ${feasibility.minQuartersForLongestChain} quarters but only ` +
+            `${feasibility.academicQuarterCount} remain before your target graduation date`
+        );
+    }
+    alert(
+        `Course plan is infeasible: ${reasons.join('; ')}. Some courses will remain unassigned. ` +
+        `Consider raising max units in Advanced Settings, or choosing a longer Graduation Timeline in setup step 3.`
+    );
+}
+
+// Heuristic planner: greedy quarter-by-quarter sweep. Used when the optimal
+// planner is turned off or unavailable.
+function autoPlanHeuristic() {
+    const run = preparePlanningRun();
+    if (!run) return;
+    const { academicQuarters, addFixedCoursesBefore, completed,
+        categoryPlacedCounts, categoryPlacedUnits, scores } = run;
+
     // A pinned/fixed course's prerequisites (transitively) must land strictly
     // before it. deadlineOrder[id] = earliest chronological order of any
     // pre-placed course that depends on id.
@@ -2557,13 +2785,6 @@ function autoPlanCoreCourses() {
                 deadlineOrder[prereqId] = Math.min(deadlineOrder[prereqId] ?? Infinity, order);
                 stack.push(prereqId);
             });
-        }
-    });
-
-    const scores = new Map();
-    Object.values(graph).forEach(node => {
-        if (!node.placed) {
-            scores.set(node.course.id, computePriorityScore(node, graph, requirementWeights));
         }
     });
 
@@ -2626,6 +2847,13 @@ function autoPlanCoreCourses() {
 
         quarter.classes.forEach(id => completed.add(id));
     }
+
+    finishPlanningRun(run);
+}
+
+// Shared wrap-up: explain every course left unassigned, then re-render.
+function finishPlanningRun(run) {
+    const { academicQuarters, categoryPlacedCounts, categoryPlacedUnits } = run;
 
     // Courses left over solely because their category already hit its
     // configured target get a specific reason, ahead of the generic pass.
